@@ -2,6 +2,7 @@ import { applyMoves, type CubeState } from '../core/cube';
 import { YELLOW_UP } from '../core/frames';
 import { invertAlg, parseAlg } from '../core/notation';
 import { focusOf } from '../core/pieces';
+import { CMLL_CASES } from './cmll';
 import { F2L_CASES } from './f2l';
 import { OLL_CASES } from './oll';
 import { PLL_CASES } from './pll';
@@ -21,8 +22,11 @@ export interface AlgSet {
   title: string;
   summary: string;
   cases: readonly AlgCase[];
-  /** 작은 그림의 종류: oll = 위에서 본 노란색 무늬, pll = 위에서 본 옆면 색, iso = 비스듬히 본 큐브 */
-  view: 'oll' | 'pll' | 'iso';
+  /**
+   * 작은 그림의 종류: oll = 위에서 본 노란색 무늬, pll = 위에서 본 옆면 색,
+   * cmll = 위에서 본 코너만, iso = 비스듬히 본 큐브
+   */
+  view: 'oll' | 'pll' | 'cmll' | 'iso';
   /** 강조할 조각 (없으면 전부) */
   focus: ReadonlySet<number> | null;
 }
@@ -37,6 +41,12 @@ function pick(from: readonly AlgCase[], ids: readonly string[]): AlgCase[] {
 
 /** F2L에서 볼 조각: 센터, 흰색 십자, 흰색 코너, 가운데 층 엣지 (윗층 조각은 흐리게) */
 const F2L_FOCUS = focusOf('U R F D L B UF UR UB UL UFR UFL UBR UBL FR FL BR BL');
+
+/**
+ * CMLL(Roux)에서 볼 조각: 양옆 블록과 윗층 코너. 가운데 줄과 윗층 엣지는 흐리게.
+ * 이름은 완성 상태(흰색 위) 기준이라, 노란색을 위로 잡으면 위아래와 좌우가 바뀐다.
+ */
+const CMLL_FOCUS = focusOf('R L UR FR BR UFR UBR UL FL BL UFL UBL DFR DFL DBR DBL');
 
 export const ALG_SETS: readonly AlgSet[] = [
   {
@@ -78,6 +88,14 @@ export const ALG_SETS: readonly AlgSet[] = [
     cases: PLL_CASES,
     view: 'pll',
     focus: null,
+  },
+  {
+    id: 'cmll',
+    title: 'CMLL (Roux)',
+    summary: 'Roux 방법에서 블록 두 개를 만든 뒤 윗층 코너를 한 번에 맞추는 공식',
+    cases: CMLL_CASES,
+    view: 'cmll',
+    focus: CMLL_FOCUS,
   },
 ];
 

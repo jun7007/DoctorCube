@@ -6,7 +6,7 @@ const AMOUNTS = [1, -1, 2] as const;
 /**
  * 무작위 회전을 이어 붙인 스크램블.
  * 같은 면을 연달아 돌리거나(R R'), 같은 축을 세 번 연속 돌리는(R L R) 낭비는 피한다.
- * (무작위 "상태" 스크램블은 Kociemba 풀이기가 들어오는 P4에서 교체한다.)
+ * (자유 모드는 무작위 "상태" 스크램블을 쓰고, 그것이 늦을 때 이것으로 대신한다.)
  */
 export function generateScramble(length = 25, random: () => number = Math.random): Move[] {
   const out: Move[] = [];

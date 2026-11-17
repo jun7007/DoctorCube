@@ -78,3 +78,33 @@ describe('CFOP 풀이기', () => {
     expect(() => solveCfop(bad)).toThrow();
   });
 });
+
+describe('외운 공식만 쓰는 CFOP', () => {
+  it('외운 공식이 없으면 2-Look과 같고, 모두 외웠으면 전체 공식과 같다', async () => {
+    const { OLL_CASES } = await import('../algorithms/oll');
+    const { PLL_CASES } = await import('../algorithms/pll');
+    const everything = new Set([...OLL_CASES, ...PLL_CASES].map((c) => c.id));
+    const random = rng(77);
+    for (let i = 0; i < 60; i++) {
+      const start = applyMoves(SOLVED, generateScramble(25, random));
+      const flat = (o: Parameters<typeof solveCfop>[1]) => solveCfop(start, o).flatMap(stageMoves);
+      expect(flat({ known: new Set() })).toEqual(flat({ twoLook: true }));
+      expect(flat({ known: everything })).toEqual(flat({}));
+    }
+  });
+
+  it('일부만 외웠어도 항상 풀리고, 2-Look보다 짧아지는 경우가 있다', async () => {
+    const { PLL_CASES } = await import('../algorithms/pll');
+    const somePll = new Set(PLL_CASES.slice(0, 8).map((c) => c.id));
+    const random = rng(78);
+    let shorter = 0;
+    for (let i = 0; i < 100; i++) {
+      const start = applyMoves(SOLVED, generateScramble(25, random));
+      const mine = solveCfop(start, { known: somePll }).flatMap(stageMoves);
+      const two = solveCfop(start, { twoLook: true }).flatMap(stageMoves);
+      expect(isSolved(applyMoves(start, mine))).toBe(true);
+      if (mine.length < two.length) shorter++;
+    }
+    expect(shorter).toBeGreaterThan(0);
+  });
+});

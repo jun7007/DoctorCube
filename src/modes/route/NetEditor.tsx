@@ -19,13 +19,15 @@ interface Props {
   color: number;
   onColor: (color: number) => void;
   onPaint: (index: number) => void;
+  /** 색이 확실하지 않은 칸 (카메라로 읽었을 때). 물음표로 표시한다 */
+  unsure?: readonly number[];
 }
 
 /**
  * 큐브 전개도. 칸을 누르면 고른 색으로 칠한다.
  * 센터는 면의 기준이라 바꿀 수 없다 (흰색이 위, 초록색이 앞).
  */
-export function NetEditor({ state, color, onColor, onPaint }: Props) {
+export function NetEditor({ state, color, onColor, onPaint, unsure = [] }: Props) {
   const counts = [0, 0, 0, 0, 0, 0];
   for (const c of state) counts[c]++;
 
@@ -39,7 +41,7 @@ export function NetEditor({ state, color, onColor, onPaint }: Props) {
             return (
               <button
                 key={index}
-                className={`net__cell${center ? ' net__cell--center' : ''}`}
+                className={`net__cell${center ? ' net__cell--center' : ''}${unsure.includes(index) ? ' net__cell--unsure' : ''}`}
                 style={{
                   gridColumn: col + (i % 3) + 1,
                   gridRow: row + Math.floor(i / 3) + 1,

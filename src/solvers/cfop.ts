@@ -35,6 +35,11 @@ export const CFOP_STAGE_TITLES: Readonly<Record<CfopStageId, string>> = {
 export interface CfopOptions {
   /** true면 OLL과 PLL을 각각 두 번에 나눠 푼다 (2-Look: 공식 16개만 쓴다) */
   twoLook?: boolean;
+  /**
+   * 외운 공식의 id 모음. 주면 OLL과 PLL에서 맞는 공식을 외웠을 때만 한 번에 풀고,
+   * 아니면 2-Look으로 푼다 (twoLook 값은 무시한다).
+   */
+  known?: ReadonlySet<string>;
 }
 
 const WHITE = 0;
@@ -226,42 +231,46 @@ function findCase(
   return null;
 }
 
-function oll(b: Builder, twoLook: boolean): void {
+/** 한 번에 푸는 공식을 쓸지, 2-Look으로 나눠 풀지 */
+type Look = { full: readonly AlgCase[] } | 'twoLook';
+
+function oll(b: Builder, look: Look): void {
   b.begin('oll');
   if (topYellow(b.state)) return;
 
-  if (twoLook) {
-    if (!topEdgesYellow(b.state)) {
-      // 점 모양은 공식 한 번으로 끝나지 않을 수 있어 두 번까지 허용한다.
-      for (let guard = 0; !topEdgesYellow(b.state); guard++) {
-        if (guard > 2) fail();
-        const found = findCase(b.state, TWO_LOOK_OLL_EDGES, topEdgesYellow) ?? {
-          algCase: TWO_LOOK_OLL_EDGES[0],
-          pre: [],
-          alg: parseAlg(TWO_LOOK_OLL_EDGES[0].alg),
-        };
-        b.do(`첫 번째: ${found.algCase.name} 공식으로 노란 십자를 만들어요.`, [...found.pre, ...found.alg]);
-      }
-    }
-    if (topYellow(b.state)) return;
-    const found = findCase(b.state, pick(OLL_CASES, TWO_LOOK_OLL_CORNERS), topYellow);
-    if (!found) fail();
-    b.do(`두 번째: ${found.algCase.name} 공식으로 코너의 노란색을 위로 올려요.`, [...found.pre, ...found.alg]);
+  const direct = look === 'twoLook' ? null : findCase(b.state, look.full, topYellow);
+  if (direct) {
+    b.do(`${direct.algCase.name} 공식으로 윗면을 한 번에 노랗게 만들어요.`, [...direct.pre, ...direct.alg]);
     return;
   }
 
-  const found = findCase(b.state, OLL_CASES, topYellow);
+  // 2-Look: 먼저 노란 십자, 그다음 코너.
+  // 점 모양은 공식 한 번으로 끝나지 않을 수 있어 두 번까지 허용한다.
+  for (let guard = 0; !topEdgesYellow(b.state); guard++) {
+    if (guard > 2) fail();
+    const found = findCase(b.state, TWO_LOOK_OLL_EDGES, topEdgesYellow) ?? {
+      algCase: TWO_LOOK_OLL_EDGES[0],
+      pre: [],
+      alg: parseAlg(TWO_LOOK_OLL_EDGES[0].alg),
+    };
+    b.do(`첫 번째: ${found.algCase.name} 공식으로 노란 십자를 만들어요.`, [...found.pre, ...found.alg]);
+  }
+  if (topYellow(b.state)) return;
+  const found = findCase(b.state, pick(OLL_CASES, TWO_LOOK_OLL_CORNERS), topYellow);
   if (!found) fail();
-  b.do(`${found.algCase.name} 공식으로 윗면을 한 번에 노랗게 만들어요.`, [...found.pre, ...found.alg]);
+  b.do(`두 번째: ${found.algCase.name} 공식으로 코너의 노란색을 위로 올려요.`, [...found.pre, ...found.alg]);
 }
 
-function pll(b: Builder, twoLook: boolean): void {
+function pll(b: Builder, look: Look): void {
   b.begin('pll');
   const finished = (s: CubeState) => findU(s, isSolved) >= 0;
   const cornersDone = (s: CubeState) => findU(s, topCornersHome) >= 0;
 
   if (!finished(b.state)) {
-    if (twoLook) {
+    const direct = look === 'twoLook' ? null : findCase(b.state, look.full, finished);
+    if (direct) {
+      b.do(`${direct.algCase.name} 공식으로 윗층의 자리를 한 번에 맞춰요.`, [...direct.pre, ...direct.alg]);
+    } else {
       if (!cornersDone(b.state)) {
         const found = findCase(b.state, pick(PLL_CASES, TWO_LOOK_PLL_CORNERS), cornersDone);
         if (!found) fail();
@@ -272,10 +281,6 @@ function pll(b: Builder, twoLook: boolean): void {
         if (!found) fail();
         b.do(`두 번째: ${found.algCase.name} 공식으로 엣지 자리를 맞춰요.`, [...found.pre, ...found.alg]);
       }
-    } else {
-      const found = findCase(b.state, PLL_CASES, finished);
-      if (!found) fail();
-      b.do(`${found.algCase.name} 공식으로 윗층의 자리를 한 번에 맞춰요.`, [...found.pre, ...found.alg]);
     }
   }
 
@@ -289,13 +294,15 @@ function pll(b: Builder, twoLook: boolean): void {
  * 이미 끝난 단계는 steps가 비어 있다. 풀 수 없는 상태면 오류를 던진다.
  */
 export function solveCfop(state: CubeState, options: CfopOptions = {}): SolveStage<CfopStageId>[] {
-  const twoLook = options.twoLook === true;
+  const { known } = options;
+  const looks = (all: readonly AlgCase[]): Look =>
+    known ? { full: all.filter((c) => known.has(c.id)) } : options.twoLook ? 'twoLook' : { full: all };
   const b = new Builder(state);
   orient(b);
   cross(b);
   f2l(b);
-  oll(b, twoLook);
-  pll(b, twoLook);
+  oll(b, looks(OLL_CASES));
+  pll(b, looks(PLL_CASES));
   if (!isSolved(b.state)) fail();
   return b.stages;
 }

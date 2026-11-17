@@ -1136,3 +1136,120 @@ kbd {
   font-weight: 600;
   color: var(--muted);
 }
+
+/* ───────── 카메라 스캔 ───────── */
+
+.scan__camera {
+  container-type: size;
+  background: #000;
+}
+
+.scan__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 안내 격자: 카메라 화면 짧은 변의 66% (ScanView의 GUIDE와 같아야 한다) */
+.scan__guide {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(66cqw, 66cqh);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 2px solid #fff;
+  border-radius: 10px;
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 45%);
+  overflow: hidden;
+}
+
+.scan__cell {
+  display: grid;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 70%);
+}
+
+.scan__cell i {
+  width: 34%;
+  aspect-ratio: 1;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 60%);
+}
+
+.scan__message {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: #fff;
+  text-align: center;
+}
+
+.scan__warn {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--warn);
+}
+
+.scan__faces {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  max-width: 380px;
+}
+
+.scan__face {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  padding: 2px;
+  border: 2px solid transparent;
+  border-radius: 6px;
+}
+
+.scan__face--now {
+  border-color: var(--accent);
+}
+
+.scan__face span {
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: var(--surface-3);
+}
+
+.scan__face .scan__face-empty {
+  opacity: 0.45;
+}
+
+.route__scan {
+  width: 100%;
+}
+
+.route__scan-note {
+  color: var(--text);
+}
+
+/* 어떤 색 칸 위에서도 보이도록 어두운 글자에 밝은 테두리를 준다 */
+.net__cell--unsure {
+  display: grid;
+  place-items: center;
+}
+
+.net__cell--unsure::after {
+  content: '?';
+  color: #10121c;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  text-shadow:
+    0 0 2px #fff,
+    0 0 2px #fff,
+    0 0 3px #fff;
+}

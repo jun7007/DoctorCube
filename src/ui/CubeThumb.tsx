@@ -11,11 +11,24 @@ const BODY = '#15161c';
 /**
  * 위에서 내려다본 그림: 윗면 9칸과 옆면 맨 윗줄 12칸.
  * mode 'oll'은 윗면 색(노랑)만 칠하고 나머지는 회색, 'pll'은 실제 색을 모두 칠한다.
+ * 'cmll'은 코너만 실제 색으로 칠한다 (Roux에서는 이 단계에 엣지를 보지 않는다).
  */
-export function TopView({ state, mode, size = 72 }: { state: CubeState; mode: 'oll' | 'pll'; size?: number }) {
+export function TopView({
+  state,
+  mode,
+  size = 72,
+}: {
+  state: CubeState;
+  mode: 'oll' | 'pll' | 'cmll';
+  size?: number;
+}) {
   const top = state[4];
-  const fill = (index: number) =>
-    mode === 'oll' ? (state[index] === top ? STICKER_COLORS[top] : BLANK) : STICKER_COLORS[state[index]];
+  /** corner = 코너 조각의 칸인지 */
+  const fill = (index: number, corner: boolean) => {
+    if (mode === 'oll') return state[index] === top ? STICKER_COLORS[top] : BLANK;
+    if (mode === 'cmll' && !corner && index !== 4) return BLANK;
+    return STICKER_COLORS[state[index]];
+  };
 
   // 좌표 단위: 옆 띠 1 + 윗면 3칸×3 + 옆 띠 1
   const cell = 3;
@@ -33,19 +46,19 @@ export function TopView({ state, mode, size = 72 }: { state: CubeState; mode: 'o
   return (
     <svg viewBox={`0 0 ${total} ${total}`} width={size} height={size} role="img" aria-label="위에서 본 모습">
       {Array.from({ length: 9 }, (_, i) => (
-        <rect key={i} x={at(i % 3)} y={at(Math.floor(i / 3))} width={cell} height={cell} rx={0.5} fill={fill(i)} />
+        <rect key={i} x={at(i % 3)} y={at(Math.floor(i / 3))} width={cell} height={cell} rx={0.5} fill={fill(i, i % 2 === 0 && i !== 4)} />
       ))}
       {back.map((f, i) => (
-        <rect key={`b${i}`} x={at(i)} y={0} width={cell} height={strip} rx={0.3} fill={fill(f)} />
+        <rect key={`b${i}`} x={at(i)} y={0} width={cell} height={strip} rx={0.3} fill={fill(f, i !== 1)} />
       ))}
       {front.map((f, i) => (
-        <rect key={`f${i}`} x={at(i)} y={total - strip} width={cell} height={strip} rx={0.3} fill={fill(f)} />
+        <rect key={`f${i}`} x={at(i)} y={total - strip} width={cell} height={strip} rx={0.3} fill={fill(f, i !== 1)} />
       ))}
       {left.map((f, i) => (
-        <rect key={`l${i}`} x={0} y={at(i)} width={strip} height={cell} rx={0.3} fill={fill(f)} />
+        <rect key={`l${i}`} x={0} y={at(i)} width={strip} height={cell} rx={0.3} fill={fill(f, i !== 1)} />
       ))}
       {right.map((f, i) => (
-        <rect key={`r${i}`} x={total - strip} y={at(i)} width={strip} height={cell} rx={0.3} fill={fill(f)} />
+        <rect key={`r${i}`} x={total - strip} y={at(i)} width={strip} height={cell} rx={0.3} fill={fill(f, i !== 1)} />
       ))}
     </svg>
   );

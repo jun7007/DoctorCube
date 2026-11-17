@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { SOLVED, isSolved, type CubeState, type Move } from '../../core/cube';
 import { algToString } from '../../core/notation';
-import { generateScramble } from '../../core/scramble';
 import { locate, makePlan, nextStep, type NextStep, type Plan } from '../../solvers/plan';
 import { CubeCanvas, type CubeCanvasHandle } from '../../ui/CubeCanvas';
 import { MovePad } from '../../ui/MovePad';
 import { SPEEDS, SpeedControl, useSpeed } from '../../ui/speed';
 import { useMoveKeys } from '../../ui/useMoveKeys';
+import { Records } from './RecordsPanel';
+import { INSPECTION_MS, solveStore, useInspection } from './solveStore';
+import { scrambler } from './scrambler';
 import { countTurns, type FreeSession, type TimerState } from './session';
+import { formatTime } from './stats';
+import './free.css';
 
+/** 섞을 때 한 수가 도는 시간 */
 const SCRAMBLE_MS = 70;
 
 export function FreeMode({ session }: { session: FreeSession }) {
@@ -17,6 +22,10 @@ export function FreeMode({ session }: { session: FreeSession }) {
   const [speed, setSpeed] = useSpeed();
   const [hintOpen, setHintOpen] = useState(false);
   const historyBox = useRef<HTMLDivElement>(null);
+  const [inspection, setInspection] = useInspection();
+  // 스크램블을 기다리는 중인지. 번호는 "가장 최근에 누른 섞기"를 가리킨다.
+  const [scrambling, setScrambling] = useState(false);
+  const scrambleJob = useRef(0);
 
   const turn = useCallback(
     (move: Move) => {
@@ -33,16 +42,72 @@ export function FreeMode({ session }: { session: FreeSession }) {
     const move = session.redo();
     if (move) view.current?.enqueue(move);
   }, [session]);
+  const applyScramble = useCallback(
+    (moves: readonly Move[]) => {
+      // 관찰 시간은 섞는 애니메이션이 끝난 뒤부터 센다. (180° 회전은 1.4배 걸린다)
+      const animation = moves.reduce((ms, m) => ms + SCRAMBLE_MS * (m.amount === 2 ? 1.4 : 1), 0);
+      session.scramble(
+        moves,
+        inspection ? { inspectMs: INSPECTION_MS, inspectFrom: performance.now() + animation } : {},
+      );
+      view.current?.setState(SOLVED);
+      for (const m of moves) view.current?.enqueue(m, SCRAMBLE_MS);
+    },
+    [session, inspection],
+  );
   const scramble = useCallback(() => {
-    const moves = generateScramble();
-    session.scramble(moves);
-    view.current?.setState(SOLVED);
-    for (const m of moves) view.current?.enqueue(m, SCRAMBLE_MS);
-  }, [session]);
+    const job = ++scrambleJob.current;
+    // 미리 만들어 둔 무작위 상태 스크램블이 있으면 바로 섞는다.
+    const ready = scrambler.takeReady();
+    if (ready) {
+      applyScramble(ready);
+      return;
+    }
+    // 없으면 잠깐 기다린다. 너무 늦으면 무작위 회전 스크램블로 대신한다.
+    setScrambling(true);
+    void scrambler.take().then((moves) => {
+      if (scrambleJob.current !== job) return; // 그 사이 초기화했거나 화면을 떠났다
+      setScrambling(false);
+      applyScramble(moves);
+    });
+  }, [applyScramble]);
   const reset = useCallback(() => {
+    scrambleJob.current++;
+    setScrambling(false);
     session.reset();
     view.current?.setState(SOLVED);
   }, [session]);
+  const runHint = useCallback(
+    (moves: Move[]) => {
+      session.markHintUsed();
+      moves.forEach(turn);
+    },
+    [session, turn],
+  );
+
+  // 탭을 열 때 스크램블을 미리 만들어 둔다 (처음에는 풀이기 표를 만드느라 조금 걸린다).
+  useEffect(() => {
+    scrambler.prepare();
+    const job = scrambleJob;
+    return () => {
+      job.current++;
+    };
+  }, []);
+
+  // 풀이가 끝나면 기록에 남긴다.
+  useEffect(
+    () =>
+      session.onSolve((result) =>
+        solveStore.add({
+          at: Date.now(),
+          ms: Math.floor(result.ms),
+          turns: result.turns,
+          scramble: algToString(result.scramble),
+          hint: result.hintUsed,
+        }),
+      ),
+    [session],
+  );
 
   // 키보드: 글자 = 회전, Shift+글자 = 반대 방향, Ctrl+Z / Ctrl+Y = 되돌리기 / 다시 실행
   useMoveKeys(turn, (e) => {
@@ -61,6 +126,7 @@ export function FreeMode({ session }: { session: FreeSession }) {
 
   const turns = countTurns(snap.history);
   const done = snap.timer.status === 'done';
+  const inspecting = snap.timer.status === 'ready' && snap.timer.inspectUntil !== undefined;
 
   return (
     <div className="workspace">
@@ -83,8 +149,8 @@ export function FreeMode({ session }: { session: FreeSession }) {
 
       <section className="panel" aria-label="조작">
         <div className="status">
-          <div className="status__timer">
-            <TimerText timer={snap.timer} />
+          <div className={inspecting ? 'status__timer status__timer--inspect' : 'status__timer'}>
+            <TimerText timer={snap.timer} onTick={session.tick} />
           </div>
           <div className="status__meta">
             <span className="status__turns">{turns}회전</span>
@@ -93,8 +159,8 @@ export function FreeMode({ session }: { session: FreeSession }) {
         </div>
 
         <div className="actions">
-          <button className="btn btn--primary" onClick={scramble}>
-            섞기
+          <button className="btn btn--primary" onClick={scramble} disabled={scrambling} aria-busy={scrambling}>
+            {scrambling ? '섞는 중…' : '섞기'}
           </button>
           <button className="btn" onClick={undo} disabled={snap.history.length === 0}>
             되돌리기
@@ -113,7 +179,7 @@ export function FreeMode({ session }: { session: FreeSession }) {
           <button className="btn hint__toggle" aria-expanded={hintOpen} onClick={() => setHintOpen((o) => !o)}>
             {hintOpen ? '힌트 닫기' : '힌트 보기 (초보자 공식)'}
           </button>
-          {hintOpen && <Hint cube={snap.cube} onRun={(moves) => moves.forEach(turn)} />}
+          {hintOpen && <Hint cube={snap.cube} onRun={runHint} />}
         </div>
 
         <div className="history">
@@ -122,6 +188,8 @@ export function FreeMode({ session }: { session: FreeSession }) {
             {snap.history.length > 0 ? algToString(snap.history) : <span className="muted">아직 없어요</span>}
           </div>
         </div>
+
+        <Records inspection={inspection} onInspection={setInspection} />
 
         <details className="help">
           <summary>조작 방법</summary>
@@ -133,6 +201,9 @@ export function FreeMode({ session }: { session: FreeSession }) {
               방향으로.
             </li>
             <li>섞은 뒤 처음 돌리는 순간 타이머가 시작돼요.</li>
+            <li>
+              다 맞추면 <b>기록</b>에 시간이 남아요. ao5는 최근 5번에서 가장 빠른 것과 느린 것을 뺀 평균이에요.
+            </li>
             <li>
               키보드: <kbd>R</kbd> <kbd>U</kbd> <kbd>F</kbd> 등 글자 키로 회전, <kbd>Shift</kbd>와 함께 누르면 반대
               방향, <kbd>Ctrl</kbd>+<kbd>Z</kbd>로 되돌리기.
@@ -190,24 +261,29 @@ const STATUS_LABEL: Record<TimerState['status'], string> = {
   done: '완성',
 };
 
-function TimerText({ timer }: { timer: TimerState }) {
+function TimerText({ timer, onTick }: { timer: TimerState; onTick: () => void }) {
   const [, setTick] = useState(0);
-  const running = timer.status === 'running';
+  const inspectUntil = timer.status === 'ready' ? timer.inspectUntil : undefined;
+  const ticking = timer.status === 'running' || inspectUntil !== undefined;
   useEffect(() => {
-    if (!running) return;
-    const id = setInterval(() => setTick((n) => n + 1), 50);
+    if (!ticking) return;
+    const tick = () => {
+      onTick(); // 관찰 시간이 끝났으면 여기서 타이머가 시작된다
+      setTick((n) => n + 1);
+    };
+    const id = setInterval(tick, 50);
     return () => clearInterval(id);
-  }, [running]);
+  }, [ticking, onTick]);
 
+  if (inspectUntil !== undefined) {
+    const left = Math.ceil((inspectUntil - performance.now()) / 1000);
+    return (
+      <>
+        <small>관찰</small> {Math.min(INSPECTION_MS / 1000, Math.max(0, left))}
+      </>
+    );
+  }
   const ms =
     timer.status === 'running' ? performance.now() - timer.startedAt : timer.status === 'done' ? timer.elapsed : 0;
   return <>{formatTime(ms)}</>;
-}
-
-function formatTime(ms: number): string {
-  const total = Math.max(0, ms) / 1000;
-  const minutes = Math.floor(total / 60);
-  const seconds = total - minutes * 60;
-  const s = seconds.toFixed(2);
-  return minutes > 0 ? `${minutes}:${s.padStart(5, '0')}` : s;
 }

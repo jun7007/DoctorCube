@@ -4,6 +4,7 @@ import type { Move } from '../../core/cube';
 import { CubeCanvas, type CubeCanvasHandle } from '../../ui/CubeCanvas';
 import { SPEEDS, useSpeed } from '../../ui/speed';
 import { AlgSetView, CaseDrill, CaseStudy } from './AlgViews';
+import { CaseQuiz } from './CaseQuiz';
 import { useCaseStats } from './caseStore';
 import { COURSES, type Course, type Lesson } from './courses';
 import { useProgress } from './progress';
@@ -15,8 +16,9 @@ export type LearnRoute =
   | { view: 'home' }
   | { view: 'lesson'; lessonId: string }
   | { view: 'set'; setId: string }
-  | { view: 'case'; setId: string; caseId: string }
-  | { view: 'drill'; setId: string };
+  | { view: 'case'; setId: string; caseId: string; from?: 'quiz' }
+  | { view: 'drill'; setId: string }
+  | { view: 'quiz'; setId: string };
 
 const ALL_LESSONS = COURSES.flatMap((course) => course.lessons.map((lesson) => ({ course, lesson })));
 
@@ -50,20 +52,35 @@ export function LearnMode({ route, onRoute }: Props) {
     }
   }
 
-  if (route.view === 'set' || route.view === 'case' || route.view === 'drill') {
+  if (route.view === 'set' || route.view === 'case' || route.view === 'drill' || route.view === 'quiz') {
     const set = ALG_SETS.find((s) => s.id === route.setId);
     if (set) {
       const toSet = () => onRoute({ view: 'set', setId: set.id });
-      const toCase = (caseId: string) => onRoute({ view: 'case', setId: set.id, caseId });
+      const toQuiz = () => onRoute({ view: 'quiz', setId: set.id });
+      // 퀴즈에서 연 공식은 이전·다음 공식으로 넘겨도 퀴즈로 돌아간다.
+      const from = route.view === 'quiz' ? 'quiz' : route.view === 'case' ? route.from : undefined;
+      const toCase = (caseId: string) => onRoute({ view: 'case', setId: set.id, caseId, from });
       if (route.view === 'drill') return <CaseDrill key={set.id} set={set} onBack={toSet} />;
+      if (route.view === 'quiz') return <CaseQuiz key={set.id} set={set} onBack={toSet} onOpenCase={toCase} />;
       const algCase = route.view === 'case' ? set.cases.find((c) => c.id === route.caseId) : undefined;
-      if (algCase) return <CaseStudy set={set} algCase={algCase} onBack={toSet} onOpenCase={toCase} />;
+      if (algCase) {
+        return (
+          <CaseStudy
+            set={set}
+            algCase={algCase}
+            onBack={from === 'quiz' ? toQuiz : toSet}
+            backLabel={from === 'quiz' ? '퀴즈로' : undefined}
+            onOpenCase={toCase}
+          />
+        );
+      }
       return (
         <AlgSetView
           set={set}
           onBack={home}
           onOpenCase={toCase}
           onDrill={() => onRoute({ view: 'drill', setId: set.id })}
+          onQuiz={toQuiz}
         />
       );
     }

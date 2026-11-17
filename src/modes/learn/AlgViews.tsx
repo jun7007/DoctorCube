@@ -3,17 +3,19 @@
  */
 import { useMemo, useRef, useState } from 'react';
 import { caseState, type AlgCase, type AlgSet } from '../../algorithms';
-import type { Move } from '../../core/cube';
+import type { CubeState, Move } from '../../core/cube';
 import { parseAlg } from '../../core/notation';
 import { CubeCanvas, type CubeCanvasHandle } from '../../ui/CubeCanvas';
 import { IsoView, TopView } from '../../ui/CubeThumb';
 import { SPEEDS, useSpeed } from '../../ui/speed';
 import { pickCase, useCaseStats } from './caseStore';
+import { drillQuestion, pickTurn, type PreTurn } from './quiz';
+import './quiz.css';
 import type { Playable } from './resolve';
 import { StepPlayer } from './StepPlayer';
 
-function Thumb({ set, algCase, size }: { set: AlgSet; algCase: AlgCase; size?: number }) {
-  const state = caseState(algCase);
+/** 케이스의 작은 그림. 모음에 맞는 종류(위에서 본 그림 / 비스듬히 본 그림)로 그린다. */
+export function Thumb({ set, state, size }: { set: AlgSet; state: CubeState; size?: number }) {
   return set.view === 'iso' ? (
     <IsoView state={state} focus={set.focus} size={size} />
   ) : (
@@ -32,9 +34,10 @@ interface SetProps {
   onBack: () => void;
   onOpenCase: (caseId: string) => void;
   onDrill: () => void;
+  onQuiz: () => void;
 }
 
-export function AlgSetView({ set, onBack, onOpenCase, onDrill }: SetProps) {
+export function AlgSetView({ set, onBack, onOpenCase, onDrill, onQuiz }: SetProps) {
   const { stats } = useCaseStats();
   const groups = useMemo(() => {
     const map = new Map<string, AlgCase[]>();
@@ -55,9 +58,31 @@ export function AlgSetView({ set, onBack, onOpenCase, onDrill }: SetProps) {
       </div>
       <h2>{set.title}</h2>
       <p className="muted">{set.summary}</p>
-      <button className="btn btn--primary algset__drill" onClick={onDrill}>
-        공식 가리고 연습하기
-      </button>
+      <div className="algset__actions">
+        <button className="btn btn--primary algset__drill" onClick={onDrill}>
+          공식 가리고 연습하기
+        </button>
+        <button className="btn algset__quiz" onClick={onQuiz}>
+          그림 보고 공식 고르기
+        </button>
+      </div>
+
+      {set.view === 'pll' && (
+        <details className="help algset__glossary">
+          <summary>용어 설명</summary>
+          <ul>
+            <li>
+              <b>헤드라이트</b>: 한 옆면의 양쪽 코너가 같은 색이에요.
+            </li>
+            <li>
+              <b>블록</b>: 코너와 바로 옆 엣지가 같은 색이에요 (2칸).
+            </li>
+            <li>
+              <b>줄</b>: 한 옆면의 3칸이 모두 같은 색이에요.
+            </li>
+          </ul>
+        </details>
+      )}
 
       {groups.map(([group, cases]) => (
         <section key={group} className="algset__group">
@@ -65,7 +90,7 @@ export function AlgSetView({ set, onBack, onOpenCase, onDrill }: SetProps) {
           <div className="algset__grid">
             {cases.map((c) => (
               <button key={c.id} className="case-card" onClick={() => onOpenCase(c.id)}>
-                <Thumb set={set} algCase={c} size={68} />
+                <Thumb set={set} state={caseState(c)} size={68} />
                 <span className="case-card__name">
                   {stats[c.id]?.known && <span className="case-card__known">✓</span>}
                   {c.name}
@@ -85,10 +110,12 @@ interface StudyProps {
   set: AlgSet;
   algCase: AlgCase;
   onBack: () => void;
+  /** 돌아가기 버튼에 쓸 말. 없으면 모음 이름 */
+  backLabel?: string;
   onOpenCase: (caseId: string) => void;
 }
 
-export function CaseStudy({ set, algCase, onBack, onOpenCase }: StudyProps) {
+export function CaseStudy({ set, algCase, onBack, backLabel, onOpenCase }: StudyProps) {
   const view = useRef<CubeCanvasHandle>(null);
   const turnHandler = useRef<((move: Move) => void) | null>(null);
   const [speed, setSpeed] = useSpeed();
@@ -118,14 +145,14 @@ export function CaseStudy({ set, algCase, onBack, onOpenCase }: StudyProps) {
         <div className="lesson__scroll">
           <div className="lesson__head">
             <button className="link" onClick={onBack}>
-              ← {set.title}
+              ← {backLabel ?? set.title}
             </button>
             <span className="muted">
               {index + 1} / {set.cases.length}
             </span>
           </div>
           <div className="case__title">
-            <Thumb set={set} algCase={algCase} size={56} />
+            <Thumb set={set} state={playable.start} size={56} />
             <div>
               <h2 className="lesson__title">{algCase.name}</h2>
               <p className="muted">{algCase.group}</p>
@@ -178,13 +205,22 @@ export function CaseDrill({ set, onBack }: { set: AlgSet; onBack: () => void }) 
   const turnHandler = useRef<((move: Move) => void) | null>(null);
   const [speed, setSpeed] = useSpeed();
   const { stats, record } = useCaseStats();
-  const [current, setCurrent] = useState<AlgCase>(() => pickCase(set.cases, stats, null));
+  /** 지금 문제: 케이스와, 윗층을 얼마나 돌려 놓았는지 */
+  const [question, setQuestion] = useState<{ algCase: AlgCase; turn: PreTurn }>(() => {
+    const algCase = pickCase(set.cases, stats, null);
+    return { algCase, turn: pickTurn(algCase, set.view) };
+  });
+  const current = question.algCase;
   /** 문제 번호. 같은 공식이 다시 나와도 화면을 새로 시작하게 한다 */
   const [round, setRound] = useState(1);
   const [revealed, setRevealed] = useState(false);
   const [result, setResult] = useState<'ok' | 'fail' | null>(null);
   const [score, setScore] = useState({ ok: 0, total: 0 });
-  const playable = useMemo(() => playableOf(set, current), [set, current]);
+  // 윗층을 돌려 놓은 상태에서 시작한다. 돌릴 동작은 "윗층 되돌리기 + 공식"이다.
+  const playable = useMemo<Playable>(() => {
+    const { start, moves } = drillQuestion(question.algCase, question.turn);
+    return { start, groups: [{ moves }], focus: set.focus };
+  }, [set, question]);
 
   const finish = (clean: boolean) => {
     const ok = clean && !revealed;
@@ -199,7 +235,8 @@ export function CaseDrill({ set, onBack }: { set: AlgSet; onBack: () => void }) 
       record(current.id, false);
       setScore((s) => ({ ...s, total: s.total + 1 }));
     }
-    setCurrent(pickCase(set.cases, stats, current.id));
+    const algCase = pickCase(set.cases, stats, current.id);
+    setQuestion({ algCase, turn: pickTurn(algCase, set.view) });
     setRound((n) => n + 1);
     setRevealed(false);
     setResult(null);
@@ -230,10 +267,10 @@ export function CaseDrill({ set, onBack }: { set: AlgSet; onBack: () => void }) 
             </span>
           </div>
           <div className="case__title">
-            <Thumb set={set} algCase={current} size={56} />
+            <Thumb set={set} state={playable.start} size={56} />
             <div>
               <h2 className="lesson__title">{result || revealed ? current.name : '어떤 공식일까요?'}</h2>
-              <p className="muted">공식을 떠올려 직접 돌려 보세요.</p>
+              <p className="muted">윗층(U)을 맞춘 뒤 공식을 돌려 보세요.</p>
             </div>
           </div>
 

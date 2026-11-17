@@ -10,20 +10,24 @@ import { validateState } from '../../solvers/kociemba';
 import { CubeCanvas, type CubeCanvasHandle } from '../../ui/CubeCanvas';
 import { IsoView } from '../../ui/CubeThumb';
 import { SPEEDS, useSpeed } from '../../ui/speed';
+import { useCaseStats } from '../learn/caseStore';
 import type { Playable } from '../learn/resolve';
 import { StepPlayer } from '../learn/StepPlayer';
 import { NetEditor } from './NetEditor';
 import { estimateSeconds, methodRoutes, shortestRoute, type Route } from './routes';
+import { ScanView } from './ScanView';
 
 /** 경로 탭의 상태. 탭을 오가도 유지되도록 App이 보관한다. */
 export interface RouteSession {
   cube: CubeState;
-  view: 'input' | 'compare' | 'follow';
+  view: 'input' | 'scan' | 'compare' | 'follow';
   /** 따라 하는 중인 경로 */
   following: Route | null;
+  /** 카메라로 읽은 결과에서 색이 확실하지 않은 칸. 카메라로 읽지 않았으면 null */
+  unsure: readonly number[] | null;
 }
 
-export const INITIAL_ROUTE_SESSION: RouteSession = { cube: SOLVED, view: 'input', following: null };
+export const INITIAL_ROUTE_SESSION: RouteSession = { cube: SOLVED, view: 'input', following: null, unsure: null };
 
 interface Props {
   session: RouteSession;
@@ -51,10 +55,20 @@ export function RouteMode({ session, onSession, getFreeCube }: Props) {
       />
     );
   }
+  if (session.view === 'scan') {
+    return (
+      <ScanView
+        onCancel={() => onSession({ ...session, view: 'input' })}
+        onDone={({ state, unsure }) => onSession({ ...session, cube: state, unsure, view: 'input' })}
+      />
+    );
+  }
   return (
     <InputView
       cube={session.cube}
-      onCube={(cube) => onSession({ ...session, cube })}
+      unsure={session.unsure}
+      onCube={(cube, unsure = null) => onSession({ ...session, cube, unsure })}
+      onScan={() => onSession({ ...session, view: 'scan' })}
       onNext={() => onSession({ ...session, view: 'compare' })}
       getFreeCube={getFreeCube}
     />
@@ -65,12 +79,15 @@ export function RouteMode({ session, onSession, getFreeCube }: Props) {
 
 interface InputProps {
   cube: CubeState;
-  onCube: (cube: CubeState) => void;
+  unsure: readonly number[] | null;
+  /** unsure를 주지 않으면 카메라 결과 표시를 지운다 */
+  onCube: (cube: CubeState, unsure?: readonly number[] | null) => void;
+  onScan: () => void;
   onNext: () => void;
   getFreeCube: () => CubeState;
 }
 
-function InputView({ cube, onCube, onNext, getFreeCube }: InputProps) {
+function InputView({ cube, unsure, onCube, onScan, onNext, getFreeCube }: InputProps) {
   const view = useRef<CubeCanvasHandle>(null);
   const [color, setColor] = useState(0);
   const [algText, setAlgText] = useState('');
@@ -122,17 +139,31 @@ function InputView({ cube, onCube, onNext, getFreeCube }: InputProps) {
             state={cube}
             color={color}
             onColor={setColor}
+            unsure={unsure ?? []}
             onPaint={(index) => {
               const next = [...cube];
               next[index] = color;
-              set(next);
+              // 직접 칠한 칸은 확인한 것으로 본다.
+              onCube(next, unsure && unsure.filter((i) => i !== index));
+              setNotice(null);
             }}
           />
+
+          {unsure && (
+            <p className="route__notice route__scan-note">
+              카메라로 읽은 결과예요. 실제 큐브와 비교해서 틀린 칸은 색을 고른 뒤 눌러 고쳐 주세요.
+              {unsure.length > 0 && ` 물음표로 표시한 ${unsure.length}칸은 색이 확실하지 않아요.`}
+            </p>
+          )}
 
           <p className={`route__check${check.ok ? ' route__check--ok' : ''}`} role="status">
             {solved ? '완성된 상태예요. 색을 칠하거나 아래에서 섞어 보세요.' : check.ok ? '✓ 풀 수 있는 상태예요.' : check.reason}
           </p>
           {notice && <p className="muted route__notice">{notice}</p>}
+
+          <button className="btn route__scan" onClick={onScan}>
+            카메라로 찍어서 입력
+          </button>
 
           <div className="route__sources">
             <button className="btn" onClick={() => set(applyMoves(SOLVED, generateScramble()), '무작위로 섞었어요.')}>
@@ -163,7 +194,6 @@ function InputView({ cube, onCube, onNext, getFreeCube }: InputProps) {
               </button>
             </div>
           </details>
-          <p className="muted route__notice">카메라로 찍어서 입력하는 기능은 준비 중이에요.</p>
         </div>
         <div className="lesson__nav lesson__nav--single">
           <button className="btn btn--primary" onClick={onNext} disabled={!check.ok || solved}>
@@ -198,13 +228,15 @@ interface CompareProps {
 
 function CompareView({ cube, onBack, onFollow }: CompareProps) {
   const [pace, setPace] = useState<Pace>('slow');
+  const { stats } = useCaseStats();
   const methods = useMemo(() => {
+    const known = new Set(Object.keys(stats).filter((id) => stats[id].known));
     try {
-      return methodRoutes(cube);
+      return methodRoutes(cube, known);
     } catch {
       return null;
     }
-  }, [cube]);
+  }, [cube, stats]);
   const [shortest, setShortest] = useState<Route | 'loading' | 'error'>('loading');
 
   useEffect(() => {
@@ -286,6 +318,11 @@ function CompareView({ cube, onBack, onFollow }: CompareProps) {
           </li>
         ))}
       </ol>
+      {methods && !methods.some((r) => r.id === 'mine') && (
+        <p className="muted route__notice">
+          학습 탭의 공식 모음에서 OLL·PLL 공식에 "외웠어요"를 표시하면, 내가 외운 공식만 쓰는 경로도 함께 나와요.
+        </p>
+      )}
       <p className="muted route__notice">
         예상 시간은 회전 수와 고른 손 속도로 어림한 값이에요. 최단 경로는 화면을 보며 따라 돌리는 시간이에요.
       </p>

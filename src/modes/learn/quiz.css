@@ -1,0 +1,177 @@
+/*
+ * 공식 모음에 더한 것들: 목록 화면의 버튼 줄과 용어 설명, 그림 보고 공식 고르기 화면.
+ * styles.css보다 먼저 불릴 수 있어서, 겹치는 규칙은 선택자를 한 단계 더 붙여 우선하게 했다.
+ */
+
+/* ───────── 목록 화면 ───────── */
+
+.algset .algset__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* 좁은 화면(접은 폴드)에서는 한 줄에 하나씩, 넓으면 나란히 */
+.algset .algset__actions .btn {
+  flex: 1 1 170px;
+  width: auto;
+  margin-top: 0;
+  padding: 0 12px;
+}
+
+.algset .algset__glossary {
+  margin-top: 8px;
+}
+
+.algset .algset__glossary summary {
+  min-height: 44px;
+}
+
+.algset .algset__glossary ul {
+  margin: 0;
+  padding: 10px 12px 10px 28px;
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 13.5px;
+}
+
+/* ───────── 그림 보고 공식 고르기 ───────── */
+
+.algset.quiz {
+  --quiz-bad: #ff8a94;
+  padding-bottom: 12px;
+}
+
+.algset.quiz > * {
+  max-width: 560px;
+}
+
+.quiz .algset__head {
+  gap: 10px;
+}
+
+.quiz .algset__head .link {
+  min-height: 44px;
+}
+
+.quiz__score {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.quiz__figure {
+  display: grid;
+  place-items: center;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.quiz__figure svg {
+  display: block;
+  max-width: 100%;
+}
+
+.quiz__choices {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.quiz__choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  text-align: left;
+  user-select: none;
+}
+
+.quiz__choice:active:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.quiz__choice:disabled {
+  cursor: default;
+}
+
+.quiz__alg {
+  min-width: 0;
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.quiz__mark {
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.quiz__choice--dim {
+  opacity: 0.45;
+}
+
+.quiz__choice--right {
+  border-color: var(--good);
+  background: rgb(61 220 151 / 12%);
+}
+
+.quiz__choice--right .quiz__mark {
+  color: var(--good);
+}
+
+.quiz__choice--wrong {
+  border-color: var(--quiz-bad);
+  background: rgb(255 138 148 / 12%);
+}
+
+.quiz__choice--wrong .quiz__mark {
+  color: var(--quiz-bad);
+}
+
+.quiz__feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 14px;
+}
+
+.quiz__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+
+.quiz__name .muted {
+  font-size: 13px;
+  font-weight: 400;
+}
+
+/* 답을 고른 뒤의 버튼 줄: 내용이 길어도 화면 아래에 붙어 있다 */
+.quiz__actions {
+  position: sticky;
+  bottom: -12px;
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 10px 0 12px;
+  background: var(--bg);
+}

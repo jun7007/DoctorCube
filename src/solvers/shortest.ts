@@ -1,5 +1,5 @@
 import type { CubeState, Move } from '../core/cube';
-import type { ShortestRequest, ShortestResponse } from './kociemba.worker';
+import type { ShortestResponse, WorkerRequest } from './kociemba.worker';
 
 let worker: Worker | null = null;
 let nextId = 1;
@@ -24,12 +24,29 @@ function getWorker(): Worker {
   return worker;
 }
 
-/** 가장 짧은 풀이(약 20수)를 다른 스레드에서 계산한다. 처음 한 번은 몇 초 걸릴 수 있다. */
-export function solveShortest(state: CubeState): Promise<Move[]> {
+/** 요청 하나를 보내고 답을 기다린다. 워커를 만들 수 없는 환경이면 거절된 약속을 돌려준다. */
+function ask(request: (id: number) => WorkerRequest): Promise<Move[]> {
   return new Promise((resolve, reject) => {
     const id = nextId++;
     waiting.set(id, { resolve, reject });
-    const request: ShortestRequest = { id, state };
-    getWorker().postMessage(request);
+    try {
+      getWorker().postMessage(request(id));
+    } catch (err) {
+      waiting.delete(id);
+      reject(err instanceof Error ? err : new Error(String(err)));
+    }
   });
+}
+
+/** 가장 짧은 풀이(약 20수)를 다른 스레드에서 계산한다. 처음 한 번은 몇 초 걸릴 수 있다. */
+export function solveShortest(state: CubeState): Promise<Move[]> {
+  return ask((id) => ({ id, state }));
+}
+
+/**
+ * 무작위 "상태" 스크램블(WCA 방식)을 다른 스레드에서 만든다.
+ * 완성 상태에 적용하면 모든 상태가 같은 확률로 나온다. 처음 한 번은 표를 만드느라 더 걸린다.
+ */
+export function randomScramble(): Promise<Move[]> {
+  return ask((id) => ({ id, kind: 'scramble' }));
 }

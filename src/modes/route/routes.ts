@@ -1,12 +1,17 @@
+import { OLL_CASES } from '../../algorithms/oll';
+import { PLL_CASES } from '../../algorithms/pll';
 import { isRotation, type CubeState } from '../../core/cube';
 import { solveBeginner } from '../../solvers/beginner';
 import { solveCfop } from '../../solvers/cfop';
+import { solveRoux } from '../../solvers/roux';
 import { solveShortest } from '../../solvers/shortest';
 import { stageMoves, type SolveStage } from '../../solvers/types';
 
+export type RouteId = 'shortest' | 'cfop' | 'mine' | 'cfop2' | 'roux' | 'beginner';
+
 /** 한 가지 풀이 방법으로 구한 경로 */
 export interface Route {
-  id: 'shortest' | 'cfop' | 'cfop2' | 'beginner';
+  id: RouteId;
   title: string;
   /** 한 줄 설명 */
   summary: string;
@@ -19,7 +24,7 @@ export interface Route {
   regrips: number;
 }
 
-const INFO: Record<Route['id'], Pick<Route, 'title' | 'summary' | 'memorize'>> = {
+const INFO: Record<RouteId, Pick<Route, 'title' | 'summary' | 'memorize'>> = {
   shortest: {
     title: '최단 경로',
     summary: '컴퓨터가 찾은 가장 짧은 길. 화면을 보며 따라 돌려요.',
@@ -30,10 +35,20 @@ const INFO: Record<Route['id'], Pick<Route, 'title' | 'summary' | 'memorize'>> =
     summary: '십자 → F2L → OLL → PLL을 각각 한 번에.',
     memorize: '공식 약 120개 (F2L 41, OLL 57, PLL 21)',
   },
+  mine: {
+    title: 'CFOP (내가 외운 공식)',
+    summary: '외웠다고 표시한 OLL·PLL은 한 번에, 나머지는 2-Look으로.',
+    memorize: '지금 외운 공식 그대로',
+  },
   cfop2: {
     title: 'CFOP (2-Look)',
     summary: 'OLL과 PLL을 두 번씩에 나눠서.',
     memorize: '공식 16개 + F2L',
+  },
+  roux: {
+    title: 'Roux',
+    summary: '양옆에 블록 두 개를 만든 뒤 가운데 줄과 윗면으로 마무리. 블록은 컴퓨터가 가장 짧게 찾은 것이라, 사람이 풀면 보통 45~50회전이에요.',
+    memorize: 'CMLL 공식 42개 + 블록 만들기 연습',
   },
   beginner: {
     title: '초보자 공식',
@@ -42,19 +57,27 @@ const INFO: Record<Route['id'], Pick<Route, 'title' | 'summary' | 'memorize'>> =
   },
 };
 
-function makeRoute(id: Route['id'], stages: SolveStage[]): Route {
+export function makeRoute(id: RouteId, stages: SolveStage[]): Route {
   const moves = stages.flatMap(stageMoves);
   const regrips = moves.filter(isRotation).length;
   return { id, ...INFO[id], stages, turns: moves.length - regrips, regrips };
 }
 
-/** 바로 계산되는 경로들 (사람이 쓰는 공식). 풀 수 없는 상태면 오류를 던진다. */
-export function methodRoutes(state: CubeState): Route[] {
-  return [
-    makeRoute('cfop', solveCfop(state)),
+const FULL_IDS = new Set([...OLL_CASES, ...PLL_CASES].map((c) => c.id));
+
+/**
+ * 바로 계산되는 경로들 (사람이 쓰는 공식). 풀 수 없는 상태면 오류를 던진다.
+ * known은 "외웠어요"로 표시한 공식의 id. OLL·PLL 공식이 하나라도 있으면 "내가 외운 공식" 경로가 추가된다.
+ */
+export function methodRoutes(state: CubeState, known: ReadonlySet<string> = new Set()): Route[] {
+  const routes = [makeRoute('cfop', solveCfop(state))];
+  if ([...known].some((id) => FULL_IDS.has(id))) routes.push(makeRoute('mine', solveCfop(state, { known })));
+  routes.push(
     makeRoute('cfop2', solveCfop(state, { twoLook: true })),
+    makeRoute('roux', solveRoux(state)),
     makeRoute('beginner', solveBeginner(state)),
-  ];
+  );
+  return routes;
 }
 
 /** 최단 경로. 다른 스레드에서 계산하며, 처음 한 번은 몇 초 걸릴 수 있다. */

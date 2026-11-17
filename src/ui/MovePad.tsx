@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { moveToString, type BaseMove, type Move } from '../core/cube';
 
-type PadTab = 'basic' | 'extra';
+type PadTab = 'basic' | 'wide' | 'extra';
 
 const PADS: Record<PadTab, { label: string; keys: { base: BaseMove; caption: string }[] }> = {
   basic: {
@@ -13,6 +13,18 @@ const PADS: Record<PadTab, { label: string; keys: { base: BaseMove; caption: str
       { base: 'R', caption: '오른쪽' },
       { base: 'F', caption: '앞' },
       { base: 'B', caption: '뒤' },
+    ],
+  },
+  // 소문자는 그 면과 바로 옆 가운데 줄을 함께 돌린다 (공식에서 r, f 또는 Rw, Fw로 적는다).
+  wide: {
+    label: '두 줄',
+    keys: [
+      { base: 'u', caption: '위 두 줄' },
+      { base: 'd', caption: '아래 두 줄' },
+      { base: 'l', caption: '왼쪽 두 줄' },
+      { base: 'r', caption: '오른쪽 두 줄' },
+      { base: 'f', caption: '앞 두 줄' },
+      { base: 'b', caption: '뒤 두 줄' },
     ],
   },
   extra: {
