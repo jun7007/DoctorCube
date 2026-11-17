@@ -8,6 +8,11 @@
 import { applyMove, applyMoves, isSolved, type BaseMove, type CubeState, type Face, type Move } from '../core/cube';
 import { parseAlg } from '../core/notation';
 import { centerColor, colorAt } from '../core/pieces';
+import type { SolveStage as Stage } from './types';
+
+export { stageMoves } from './types';
+export type { SolveStep } from './types';
+export type SolveStage = Stage<StageId>;
 
 export type StageId =
   | 'orient'
@@ -44,17 +49,6 @@ export const STAGE_ORDER: readonly StageId[] = [
   'cornerTwist',
 ];
 
-export interface SolveStep {
-  /** 이 묶음에서 무엇을 하는지 */
-  note: string;
-  moves: Move[];
-}
-
-export interface SolveStage {
-  id: StageId;
-  title: string;
-  steps: SolveStep[];
-}
 
 /** 이 풀이기가 쓰는 공식 (학습 화면에서도 같은 것을 보여 준다) */
 export const ALG = {
@@ -416,8 +410,4 @@ function daisyAndCross(sv: Solver): void {
   }
   daisy(sv);
   cross(sv);
-}
-
-export function stageMoves(stage: SolveStage): Move[] {
-  return stage.steps.flatMap((s) => s.moves);
 }

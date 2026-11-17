@@ -1,5 +1,6 @@
 import { SOLVED, applyMoves, type CubeState, type Move } from '../../core/cube';
 import { parseAlg } from '../../core/notation';
+import { YELLOW_UP } from '../../core/frames';
 import { focusOf } from '../../core/pieces';
 import { generateScramble } from '../../core/scramble';
 import { STAGE_ORDER, solveBeginner, stageMoves, type StageId } from '../../solvers/beginner';
@@ -18,8 +19,7 @@ export interface Playable {
   focus: ReadonlySet<number> | null;
 }
 
-/** 노란색이 위, 초록색이 앞 */
-export const YELLOW_UP: CubeState = applyMoves(SOLVED, parseAlg('z2'));
+export { YELLOW_UP };
 
 const CENTERS = 'U R F D L B';
 const WHITE_EDGES = 'UF UR UB UL';
