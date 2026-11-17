@@ -5,6 +5,7 @@ import { focusOf } from '../../core/pieces';
 import { generateScramble } from '../../core/scramble';
 import { STAGE_ORDER, solveBeginner } from '../../solvers/beginner';
 import { CFOP_STAGE_ORDER, solveCfop } from '../../solvers/cfop';
+import { ROUX_STAGE_ORDER, solveRoux } from '../../solvers/roux';
 import { stageMoves, type SolveStage } from '../../solvers/types';
 import type { Course, LessonStep } from './courses';
 
@@ -32,6 +33,12 @@ const YELLOW_EDGES = 'DF DR DB DL';
 const CROSS_FOCUS = `${CENTERS} ${WHITE_EDGES}`;
 const F2L_FOCUS = `${CENTERS} ${WHITE_EDGES} ${WHITE_CORNERS} ${MIDDLE_EDGES}`;
 
+// Roux의 블록. 조각 이름은 완성 상태(흰색 위) 기준이라, 노란색을 위로 잡으면 위아래와 좌우가 바뀐다:
+// 잡았을 때의 왼쪽 블록 = 완성 상태 기준 오른쪽 위 조각들.
+const ROUX_LEFT_BLOCK = 'R L UR FR BR UFR UBR';
+const ROUX_RIGHT_BLOCK = 'UL FL BL UFL UBL';
+const ROUX_TOP_CORNERS = 'DFR DFL DBR DBL';
+
 interface Method {
   solve: (state: CubeState) => SolveStage[];
   order: readonly string[];
@@ -40,7 +47,7 @@ interface Method {
 }
 
 /** 레슨이 쓰는 풀이 방법 */
-export const METHODS: Readonly<Record<'beginner' | 'cfop', Method>> = {
+export const METHODS: Readonly<Record<'beginner' | 'cfop' | 'roux', Method>> = {
   beginner: {
     solve: solveBeginner,
     order: STAGE_ORDER,
@@ -58,6 +65,15 @@ export const METHODS: Readonly<Record<'beginner' | 'cfop', Method>> = {
     solve: (state) => solveCfop(state, { twoLook: true }),
     order: CFOP_STAGE_ORDER,
     focus: { cross: CROSS_FOCUS, f2l: F2L_FOCUS },
+  },
+  roux: {
+    solve: solveRoux,
+    order: ROUX_STAGE_ORDER,
+    focus: {
+      fb: ROUX_LEFT_BLOCK,
+      sb: `${ROUX_LEFT_BLOCK} ${ROUX_RIGHT_BLOCK}`,
+      cmll: `${ROUX_LEFT_BLOCK} ${ROUX_RIGHT_BLOCK} ${ROUX_TOP_CORNERS}`,
+    },
   },
 };
 
