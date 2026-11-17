@@ -9,12 +9,14 @@ import { generateScramble } from '../../core/scramble';
 import { validateState } from '../../solvers/kociemba';
 import { CubeCanvas, type CubeCanvasHandle } from '../../ui/CubeCanvas';
 import { IsoView } from '../../ui/CubeThumb';
+import { moveSpeech, speak, speechAvailable, stopSpeaking, useVoice } from '../../ui/speech';
 import { SPEEDS, useSpeed } from '../../ui/speed';
+import { useSolves } from '../free/solveStore';
 import { useCaseStats } from '../learn/caseStore';
 import type { Playable } from '../learn/resolve';
 import { StepPlayer } from '../learn/StepPlayer';
 import { NetEditor } from './NetEditor';
-import { estimateSeconds, methodRoutes, shortestRoute, type Route } from './routes';
+import { estimateSeconds, methodRoutes, paceFromSolves, shortestRoute, type Route } from './routes';
 import { ScanView } from './ScanView';
 
 /** 경로 탭의 상태. 탭을 오가도 유지되도록 App이 보관한다. */
@@ -207,9 +209,15 @@ function InputView({ cube, unsure, onCube, onScan, onNext, getFreeCube }: InputP
 
 // ───────── 2. 경로 비교 ─────────
 
-type Pace = 'slow' | 'normal' | 'fast';
-/** 손 속도: 초당 회전 수, 묶음마다 다음 할 일을 알아보는 데 드는 시간(초) */
-const PACES: Record<Pace, { label: string; tps: number; look: number }> = {
+type Pace = 'mine' | 'slow' | 'normal' | 'fast';
+interface PaceInfo {
+  label: string;
+  /** 초당 회전 수 */
+  tps: number;
+  /** 묶음마다 다음 할 일을 알아보는 데 드는 시간(초) */
+  look: number;
+}
+const PACES: Record<Exclude<Pace, 'mine'>, PaceInfo> = {
   slow: { label: '처음 배우는 중', tps: 1, look: 3 },
   normal: { label: '익숙함', tps: 2.5, look: 1.2 },
   fast: { label: '빠름', tps: 5, look: 0.5 },
@@ -227,8 +235,15 @@ interface CompareProps {
 }
 
 function CompareView({ cube, onBack, onFollow }: CompareProps) {
-  const [pace, setPace] = useState<Pace>('slow');
+  const solves = useSolves();
   const { stats } = useCaseStats();
+  // 자유 탭의 기록이 있으면 그것으로 내 손 속도를 잰다. 생각하는 시간까지 들어간 값이라 따로 더하지 않는다.
+  const mine = useMemo(() => paceFromSolves(solves), [solves]);
+  const paces: Partial<Record<Pace, PaceInfo>> = mine
+    ? { mine: { label: `내 기록 (초당 ${mine.toFixed(1)}회전)`, tps: mine, look: 0 }, ...PACES }
+    : PACES;
+  const [chosen, setPace] = useState<Pace | null>(null);
+  const pace: Pace = chosen && paces[chosen] ? chosen : mine ? 'mine' : 'slow';
   const methods = useMemo(() => {
     const known = new Set(Object.keys(stats).filter((id) => stats[id].known));
     try {
@@ -253,7 +268,7 @@ function CompareView({ cube, onBack, onFollow }: CompareProps) {
 
   const routes = [...(typeof shortest === 'object' ? [shortest] : []), ...(methods ?? [])];
   const fewest = routes.length > 0 ? Math.min(...routes.map((r) => r.turns)) : 0;
-  const { tps, look } = PACES[pace];
+  const { tps, look } = paces[pace]!;
 
   return (
     <div className="algset">
@@ -273,9 +288,9 @@ function CompareView({ cube, onBack, onFollow }: CompareProps) {
       <div className="route__pace">
         <span className="muted">내 손 속도</span>
         <div className="segmented" role="radiogroup" aria-label="손 속도">
-          {(Object.keys(PACES) as Pace[]).map((p) => (
+          {(Object.keys(paces) as Pace[]).map((p) => (
             <button key={p} role="radio" aria-checked={pace === p} onClick={() => setPace(p)}>
-              {PACES[p].label}
+              {paces[p]!.label}
             </button>
           ))}
         </div>
@@ -325,6 +340,7 @@ function CompareView({ cube, onBack, onFollow }: CompareProps) {
       )}
       <p className="muted route__notice">
         예상 시간은 회전 수와 고른 손 속도로 어림한 값이에요. 최단 경로는 화면을 보며 따라 돌리는 시간이에요.
+        {mine ? ' "내 기록"은 자유 탭에서 힌트 없이 푼 최근 기록으로 잰 속도예요.' : ' 자유 탭에서 몇 번 풀면 내 기록으로 잰 속도도 고를 수 있어요.'}
       </p>
     </div>
   );
@@ -336,6 +352,13 @@ function FollowView({ cube, route, onBack }: { cube: CubeState; route: Route; on
   const view = useRef<CubeCanvasHandle>(null);
   const turnHandler = useRef<((move: Move) => void) | null>(null);
   const [speed, setSpeed] = useSpeed();
+  const [voice, setVoice] = useVoice();
+  const voiceRef = useRef(voice);
+  useEffect(() => {
+    voiceRef.current = voice;
+  }, [voice]);
+  // 화면을 떠나면 읽던 말을 멈춘다.
+  useEffect(() => stopSpeaking, []);
   const playable = useMemo<Playable>(
     () => ({
       start: cube,
@@ -382,7 +405,16 @@ function FollowView({ cube, route, onBack }: { cube: CubeState; route: Route; on
             selfOnly={false}
             turnHandler={turnHandler}
             big
+            onNext={(move) => {
+              if (voiceRef.current) speak(move ? moveSpeech(move) : '완성');
+            }}
           />
+          {speechAvailable() && (
+            <label className="route__voice">
+              <input type="checkbox" checked={voice} onChange={(e) => setVoice(e.target.checked)} />
+              다음 동작을 소리로 읽어 주기
+            </label>
+          )}
         </div>
       </section>
     </div>

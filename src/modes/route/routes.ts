@@ -6,8 +6,9 @@ import { solveCfop } from '../../solvers/cfop';
 import { solveRoux } from '../../solvers/roux';
 import { solveShortest } from '../../solvers/shortest';
 import { stageMoves, type SolveStage } from '../../solvers/types';
+import { solveZz } from '../../solvers/zz';
 
-export type RouteId = 'shortest' | 'cfop' | 'mine' | 'cfop2' | 'roux' | 'beginner';
+export type RouteId = 'shortest' | 'cfop' | 'mine' | 'cfop2' | 'roux' | 'zz' | 'beginner';
 
 /** 한 가지 풀이 방법으로 구한 경로 */
 export interface Route {
@@ -50,6 +51,11 @@ const INFO: Record<RouteId, Pick<Route, 'title' | 'summary' | 'memorize'>> = {
     summary: '양옆에 블록 두 개를 만든 뒤 가운데 줄과 윗면으로 마무리. 블록은 컴퓨터가 가장 짧게 찾은 것이라, 사람이 풀면 보통 45~50회전이에요.',
     memorize: 'CMLL 공식 42개 + 블록 만들기 연습',
   },
+  zz: {
+    title: 'ZZ',
+    summary: '엣지 방향을 먼저 맞춰 두고, 큐브를 돌려 잡지 않은 채 R·U·L만으로 1·2층을 쌓아요. 블록은 컴퓨터가 가장 짧게 찾은 것이에요.',
+    memorize: 'OLL 7개 + PLL 21개 + 엣지 방향 보는 연습',
+  },
   beginner: {
     title: '초보자 공식',
     summary: '한 층씩 맞추기. 가장 쉽지만 가장 길어요.',
@@ -75,6 +81,7 @@ export function methodRoutes(state: CubeState, known: ReadonlySet<string> = new 
   routes.push(
     makeRoute('cfop2', solveCfop(state, { twoLook: true })),
     makeRoute('roux', solveRoux(state)),
+    makeRoute('zz', solveZz(state)),
     makeRoute('beginner', solveBeginner(state)),
   );
   return routes;
@@ -99,4 +106,21 @@ export async function shortestRoute(state: CubeState): Promise<Route> {
 export function estimateSeconds(route: Route, turnsPerSecond: number, lookSeconds: number): number {
   const looks = route.stages.reduce((n, s) => n + s.steps.length, 0);
   return route.turns / turnsPerSecond + route.regrips * 0.7 + looks * lookSeconds;
+}
+
+/**
+ * 자유 탭의 기록으로 잰 내 손 속도(초당 회전 수). 생각하는 시간까지 포함한 값이다.
+ * 힌트 없이 푼 최근 12번을 쓰고, 그런 기록이 3번보다 적으면 null.
+ */
+export function paceFromSolves(
+  solves: readonly { at: number; ms: number; turns: number; hint: boolean }[],
+): number | null {
+  const recent = solves
+    .filter((s) => !s.hint && s.ms > 0 && s.turns > 0)
+    .sort((a, b) => b.at - a.at)
+    .slice(0, 12);
+  if (recent.length < 3) return null;
+  const turns = recent.reduce((n, s) => n + s.turns, 0);
+  const seconds = recent.reduce((n, s) => n + s.ms, 0) / 1000;
+  return turns / seconds;
 }

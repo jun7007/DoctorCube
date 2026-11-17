@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { invertMove, moveToString, type Move } from '../../core/cube';
 import type { CubeCanvasHandle } from '../../ui/CubeCanvas';
+import { BUZZ_WRONG, buzz } from '../../ui/haptics';
 import { MovePad } from '../../ui/MovePad';
 import { SpeedControl, type Speed } from '../../ui/speed';
 import { useMoveKeys } from '../../ui/useMoveKeys';
@@ -25,6 +26,8 @@ interface Props {
   onResult?: (clean: boolean) => void;
   /** 지금 돌릴 동작을 크게 보여 준다 (실제 큐브를 들고 따라 할 때) */
   big?: boolean;
+  /** 다음에 돌릴 동작이 바뀔 때마다 불린다 (끝났으면 null). 소리로 읽어 줄 때 쓴다 */
+  onNext?: (move: Move | null) => void;
 }
 
 const same = (a: Move, b: Move) => a.base === b.base && a.amount === b.amount;
@@ -46,6 +49,7 @@ export function StepPlayer({
   mask = false,
   onResult,
   big = false,
+  onNext,
 }: Props) {
   const flat = useMemo(() => playable.groups.flatMap((g) => g.moves), [playable]);
   const [pos, setPos] = useState(0);
@@ -58,9 +62,15 @@ export function StepPlayer({
   const [playing, setPlaying] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const latestResult = useRef(onResult);
+  const latestNext = useRef(onNext);
   useEffect(() => {
     latestResult.current = onResult;
+    latestNext.current = onNext;
   });
+
+  useEffect(() => {
+    latestNext.current?.(flat[pos] ?? null);
+  }, [flat, pos]);
 
   useEffect(() => {
     view.current?.setState(playable.start);
@@ -135,6 +145,7 @@ export function StepPlayer({
         return;
       }
       // 틀린 동작은 보여 준 뒤 되돌린다.
+      buzz(BUZZ_WRONG);
       assisted.current = true;
       view.current?.enqueue(move);
       view.current?.enqueue(invertMove(move));

@@ -1198,34 +1198,74 @@ kbd {
   color: var(--warn);
 }
 
-.scan__faces {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+/* 모서리에서 찍기의 안내 육각형: 카메라 화면 짧은 변의 80% (ScanView의 GUIDE와 같아야 한다) */
+.scan__hex {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(80cqw, 80cqh);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  overflow: visible;
+}
+
+.scan__hex polygon {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 0.012;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 0.01px #000);
+}
+
+/* 흰색 칸 위에서도 보이도록 어두운 그림자를 둔다 */
+.scan__ring {
+  fill: none;
+  stroke-width: 0.03;
+  filter: drop-shadow(0 0 0.012px rgb(0 0 0 / 90%));
+}
+
+.scan__dot {
+  stroke: #fff;
+  stroke-width: 0.012;
+  filter: drop-shadow(0 0 0.012px rgb(0 0 0 / 90%));
+}
+
+.route__voice {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  max-width: 380px;
+  min-height: 40px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
-.scan__face {
+.route__voice input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+
+.scan__mode {
+  align-self: flex-start;
+}
+
+/* 지금까지 읽은 색을 보여 주는 작은 전개도 */
+.scan__net {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 1px;
-  padding: 2px;
-  border: 2px solid transparent;
-  border-radius: 6px;
+  width: 100%;
+  max-width: 264px;
 }
 
-.scan__face--now {
-  border-color: var(--accent);
-}
-
-.scan__face span {
+.scan__net span {
   aspect-ratio: 1;
   border-radius: 2px;
   background: var(--surface-3);
 }
 
-.scan__face .scan__face-empty {
-  opacity: 0.45;
+.scan__net .scan__net-empty {
+  opacity: 0.4;
 }
 
 .route__scan {

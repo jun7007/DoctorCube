@@ -1,6 +1,7 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import type { CubeState, Move } from '../core/cube';
 import { CubeView } from '../render/CubeView';
+import { buzz } from './haptics';
 
 export interface CubeCanvasHandle {
   enqueue(move: Move, duration?: number): void;
@@ -31,7 +32,12 @@ export function CubeCanvas({ ref, getState, onTurn, duration }: Props) {
   useEffect(() => {
     let view: CubeView;
     try {
-      view = new CubeView(hostRef.current!, { onTurn: (m) => latest.current.onTurn(m) });
+      view = new CubeView(hostRef.current!, {
+        onTurn: (m) => {
+          buzz();
+          latest.current.onTurn(m);
+        },
+      });
     } catch {
       setFailed(true);
       return;

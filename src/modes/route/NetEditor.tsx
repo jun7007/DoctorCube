@@ -4,7 +4,7 @@ import { STICKER_COLORS } from '../../render/colors';
 const COLOR_NAMES = ['흰색', '빨강', '초록', '노랑', '주황', '파랑'] as const;
 
 /** 전개도에서 각 면이 놓이는 칸 (열, 행). 면 순서는 U R F D L B */
-const FACE_ORIGIN: readonly (readonly [number, number])[] = [
+export const FACE_ORIGIN: readonly (readonly [number, number])[] = [
   [3, 0], // U
   [6, 3], // R
   [3, 3], // F
