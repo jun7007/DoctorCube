@@ -11,7 +11,9 @@ describe('학습 내용', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  for (const course of COURSES) {
+  // Roux 과정은 rouxCourse.test.ts에서 따로 확인한다. Roux는 가운데 줄을 돌려 센터가 옮겨 가기 때문에,
+  // 풀이 도중의 상태를 풀이기에 다시 넣어 보는 아래의 확인 방법이 맞지 않는다.
+  for (const course of COURSES.filter((c) => c.id !== 'roux')) {
     for (const lesson of course.lessons) {
       lesson.steps.forEach((step, i) => {
         const name = `${lesson.title} > ${i + 1}. ${step.title}`;

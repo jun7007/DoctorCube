@@ -10,6 +10,7 @@ import { algToString, invertAlg, parseAlg } from '../../core/notation';
 import { ALG, type StageId } from '../../solvers/beginner';
 import type { CfopStageId } from '../../solvers/cfop';
 import type { RouxStageId } from '../../solvers/roux';
+import { rouxCourse } from './rouxCourse';
 
 export interface LessonStep {
   title: string;
@@ -765,4 +766,4 @@ const cfop: Course = {
   ],
 };
 
-export const COURSES: readonly Course[] = [notation, beginner, cfop];
+export const COURSES: readonly Course[] = [notation, beginner, cfop, rouxCourse];
