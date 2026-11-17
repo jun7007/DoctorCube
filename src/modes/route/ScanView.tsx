@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { STICKER_COLORS } from '../../render/colors';
 import { assembleCorners, centerColors } from '../../scanner/assemble';
 import { classifyFaces, guessColor } from '../../scanner/classify';
-import { readCorner, readFace, type CornerReading, type FaceReading, type Point } from '../../scanner/detect';
+import { DETECT_WIDTH, readCorner, readFace, type CornerReading, type FaceReading, type Point } from '../../scanner/detect';
 import type { RGB } from '../../scanner/sample';
 
 const COLOR_NAMES = ['흰색', '빨간색', '초록색', '노란색', '주황색', '파란색'] as const;
@@ -33,8 +33,6 @@ const CORNER_HOW: readonly string[][] = [
   ['큐브를 뒤집어, 아직 안 찍은 세 면이 만나는 반대쪽 꼭짓점이 카메라를 보게 들어요.'],
 ];
 
-/** 큐브를 찾을 때 쓰는 그림의 가로 크기 (픽셀). 클수록 잘 찾지만 느리다. */
-const DETECT_WIDTH = 400;
 /** 이 값보다 확신이 낮은 칸은 "확실하지 않음"으로 표시한다 */
 const UNSURE_BELOW = 0.25;
 const MODE_KEY = 'doctorcube.scan-mode';

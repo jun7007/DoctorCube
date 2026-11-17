@@ -9,6 +9,9 @@
  */
 import type { PixelSource, RGB } from './sample';
 
+/** 큐브를 찾을 때 쓰는 그림의 가로 크기(픽셀). 화면(ScanView)과 시험이 같은 값을 쓴다. 클수록 멀리 있는 큐브도 찾지만 느리다. */
+export const DETECT_WIDTH = 400;
+
 export interface Point {
   x: number;
   y: number;

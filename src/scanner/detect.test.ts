@@ -9,14 +9,11 @@ import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 import { assembleCorners } from './assemble';
 import { classifyFaces } from './classify';
-import { findGrids, readCorner, readFace } from './detect';
+import { DETECT_WIDTH, findGrids, readCorner, readFace } from './detect';
 import type { PixelSource } from './sample';
 
 const dir = fileURLToPath(new URL('./fixtures/', import.meta.url));
 const index: { id: string; state: number[]; fov: number; faces: boolean }[] = JSON.parse(readFileSync(`${dir}index.json`, 'utf8'));
-
-/** 앱이 인식에 쓰는 그림 크기 (ScanView의 DETECT_WIDTH와 같다) */
-const DETECT_WIDTH = 400;
 
 interface Options {
   /** 배경색 */
