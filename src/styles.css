@@ -1229,6 +1229,35 @@ kbd {
   color: var(--warn);
 }
 
+.scan__progress {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.scan__chip {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 3px solid transparent;
+  border-radius: 8px;
+  color: #10121c;
+  font-weight: 800;
+  opacity: 0.45;
+}
+
+.scan__chip--done {
+  opacity: 1;
+}
+
+.scan__chip--now {
+  border-color: var(--text);
+  opacity: 1;
+}
+
 .scan__mode {
   align-self: flex-start;
 }

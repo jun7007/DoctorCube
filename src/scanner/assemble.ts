@@ -105,3 +105,48 @@ export function assembleCorners(first: CornerReading, second: CornerReading): As
 export function centerColors(reading: CornerReading): number[] {
   return reading.faces.map((face) => guessColor(face.colors[1][1]));
 }
+
+// ───────── 자유롭게 찍기: 사진 한 장씩 큐브에 올려 놓기 ─────────
+
+/** 사진 한 장(세 면)이 큐브의 어느 면들인지와, 그 27칸의 색 */
+export interface PlacedCorner {
+  /** 사진의 세 면이 큐브의 어느 면인지 (면 번호 = 센터 색 번호) */
+  faces: [number, number, number];
+  cells: { index: number; rgb: RGB }[];
+}
+
+/**
+ * 꼭짓점 쪽에서 찍은 사진 한 장을 큐브의 칸 번호에 올려 놓는다.
+ * 세 센터의 색과 화면에서 도는 방향만으로 어느 꼭짓점인지 정해지므로, 다른 사진이 없어도 된다.
+ * 센터 색을 알아볼 수 없으면 null.
+ */
+export function placeCorner(reading: CornerReading): PlacedCorner | null {
+  const seen = centerColors(reading);
+  let best: [number, number, number] | null = null;
+  let bestMatched = 0;
+  let ties = 0;
+  for (const faces of assignments(reading)) {
+    const matched = faces.filter((f, k) => f === seen[k]).length;
+    if (matched > bestMatched) {
+      bestMatched = matched;
+      best = faces;
+      ties = 1;
+    } else if (matched === bestMatched) {
+      ties++;
+    }
+  }
+  // 세 센터가 모두 맞거나, 둘이 맞고 나머지 하나가 자리 관계로 정해질 때만 받아들인다.
+  if (!best || bestMatched < 2 || (bestMatched === 2 && ties > 1)) return null;
+  const colors = new Array<RGB | null>(54).fill(null);
+  fill(colors, reading, best);
+  const cells: { index: number; rgb: RGB }[] = [];
+  colors.forEach((rgb, index) => {
+    if (rgb) cells.push({ index, rgb });
+  });
+  return cells.length === 27 ? { faces: best, cells } : null;
+}
+
+/** 54칸이 모두 채워졌을 때 색을 분류해 큐브 상태를 만든다. */
+export function finishScan(colors: readonly (RGB | null)[]): ScanResult {
+  return classifyFaces([0, 1, 2, 3, 4, 5].map((f) => colors.slice(f * 9, f * 9 + 9).map((c) => c ?? ([0, 0, 0] as const))));
+}

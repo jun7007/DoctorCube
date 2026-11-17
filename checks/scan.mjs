@@ -117,12 +117,16 @@ for (const size of [
 
   await clickText('.lesson__nav .btn', '찍기');
   await sleep(300);
-  check(`[${size.name}] 두 번째 사진 단계로`, (await text('.lesson__title'))?.startsWith('2번째 사진') === true);
+  check(
+    `[${size.name}] 찍은 세 면이 기록되고 남은 면을 알려 준다`,
+    (await page.$$('.scan__chip--done')).length === 3 && (await text('.lesson__title'))?.startsWith('남은 면') === true,
+    await text('.lesson__title'),
+  );
   // 영상이 아직 같은 꼭짓점을 보여 주는 동안에는 경고가 나온다
   const warned = await page
-    .waitForFunction(() => document.querySelector('.scan__warn')?.textContent.includes('이미 찍은 면'), { timeout: 4000 })
+    .waitForFunction(() => document.querySelector('.scan__warn')?.textContent.includes('이미 찍었어요'), { timeout: 4000 })
     .then(() => true, () => false);
-  check(`[${size.name}] 같은 꼭짓점이 계속 보이면 알려 준다`, warned);
+  check(`[${size.name}] 새 면이 안 보이면 알려 준다`, warned);
   // 반대쪽 꼭짓점 그림으로 바뀔 때까지 기다린다
   await page.waitForFunction(
     () => document.querySelector('.scan__state--found') && !document.querySelector('.scan__warn'),

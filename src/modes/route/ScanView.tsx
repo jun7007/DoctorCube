@@ -1,12 +1,13 @@
 /**
- * 카메라로 큐브를 찍어 상태를 읽는다. 안내선에 맞출 필요 없이, 화면에서 큐브의 스티커를 직접 찾는다.
- * - 두 번에 찍기: 꼭짓점이 카메라를 보게 들어 세 면씩 두 번 (어느 꼭짓점이든, 어떻게 기울이든 된다).
- * - 여섯 번에 찍기: 한 면씩 여섯 번 (어느 면이 위인지는 안내대로 잡아야 한다).
- * 찾아낸 칸마다 점을 찍어 보여 주고, 큐브를 찾았을 때만 찍을 수 있다.
+ * 카메라로 큐브를 찍어 상태를 읽는다. 안내선에 맞출 필요 없이, 화면에서 큐브를 직접 찾는다.
+ * - 자유롭게 찍기: 꼭짓점이 카메라를 보게 들고 아무 쪽이나 찍는다. 찍힌 세 면이 어느 면인지는 센터 색으로 알아내고,
+ *   아직 안 찍힌 면이 남아 있으면 그 면을 더 찍어 달라고 안내한다. 여섯 면이 다 모이면 끝난다.
+ * - 한 면씩 찍기: 한 면을 정면에서 여섯 번. 한 면만 보고는 어느 쪽이 위인지 알 수 없어서 안내 순서대로 잡아야 한다.
+ * 찾아낸 면의 테두리와 칸의 색을 영상 위에 보여 주고, 큐브를 찾았을 때만 찍을 수 있다.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { STICKER_COLORS } from '../../render/colors';
-import { assembleCorners, centerColors } from '../../scanner/assemble';
+import { finishScan, placeCorner } from '../../scanner/assemble';
 import { rankCameras, type CameraInfo } from '../../scanner/camera';
 import { classifyFaces, guessColor } from '../../scanner/classify';
 import { DETECT_WIDTH, readCorner, readFace, type CornerReading, type FaceReading, type Point } from '../../scanner/detect';
@@ -27,13 +28,7 @@ const FACE_STEPS: readonly { face: number; how: string[] }[] = [
   { face: 3, how: ['이번에는 반대로 뒤로 젖혀요.', '노란색 센터가 카메라를 보고, 초록색이 위쪽에 있어요.'] },
 ];
 
-const CORNER_HOW: readonly string[][] = [
-  [
-    '큐브의 꼭짓점 하나가 카메라를 보게 들어요. 세 면이 모두 넉넉히 보여야 해요.',
-    '어느 꼭짓점이든, 어느 쪽으로 기울이든 괜찮아요.',
-  ],
-  ['큐브를 뒤집어, 아직 안 찍은 세 면이 만나는 반대쪽 꼭짓점이 카메라를 보게 들어요.'],
-];
+const EMPTY: readonly (RGB | null)[] = new Array<RGB | null>(54).fill(null);
 
 /** 이 값보다 확신이 낮은 칸은 "확실하지 않음"으로 표시한다 */
 const UNSURE_BELOW = 0.25;
@@ -89,8 +84,8 @@ export function ScanView({ onDone, onCancel }: Props) {
   const [mode, setMode] = useState<Mode>(loadMode);
   const [stepIndex, setStepIndex] = useState(0);
   const [seen, setSeen] = useState<Seen | null>(null);
-  /** 두 번에 찍기: 첫 번째 사진에서 읽은 세 면 */
-  const [firstCorner, setFirstCorner] = useState<CornerReading | null>(null);
+  /** 자유롭게 찍기: 지금까지 읽은 칸의 색 (큐브의 칸 번호 순서, 아직 안 찍힌 칸은 null) */
+  const [scanned, setScanned] = useState<readonly (RGB | null)[]>(EMPTY);
   /** 여섯 번에 찍기: 면 번호 → 읽은 9칸 */
   const [faces, setFaces] = useState<Record<number, RGB[]>>({});
   const [problem, setProblem] = useState<string | null>(null);
@@ -104,7 +99,9 @@ export function ScanView({ onDone, onCancel }: Props) {
   /** 기본 카메라로 자동으로 바꾸는 일은 한 번만 한다 */
   const autoPicked = useRef(false);
 
-  const stepCount = mode === 'corners' ? 2 : FACE_STEPS.length;
+  /** 자유롭게 찍기에서 이미 찍힌 면 (센터 칸이 채워진 면) */
+  const doneFaces = [0, 1, 2, 3, 4, 5].filter((f) => scanned[f * 9 + 4] !== null);
+  const missing = [0, 1, 2, 3, 4, 5].filter((f) => !doneFaces.includes(f));
 
   // 카메라 켜기
   useEffect(() => {
@@ -265,7 +262,7 @@ export function ScanView({ onDone, onCancel }: Props) {
   const restart = (next: Mode) => {
     setMode(next);
     setStepIndex(0);
-    setFirstCorner(null);
+    setScanned(EMPTY);
     setFaces({});
     setSeen(null);
     setProblem(null);
@@ -286,17 +283,16 @@ export function ScanView({ onDone, onCancel }: Props) {
 
     if (mode === 'corners') {
       if (!now.corner) return;
-      if (!firstCorner) {
-        setFirstCorner(now.corner);
-        setStepIndex(1);
+      const placed = placeCorner(now.corner);
+      if (!placed) {
+        setProblem('가운데 칸의 색을 알아보지 못했어요. 빛이 번쩍이지 않게 해서 다시 찍어 주세요.');
         return;
       }
-      const result = assembleCorners(firstCorner, now.corner);
-      if (result.centersMatched < 6) {
-        setProblem('두 사진이 서로 반대쪽 꼭짓점이 아닌 것 같아요. 큐브를 뒤집어 아직 안 찍은 세 면이 보이게 다시 찍어 주세요.');
-        return;
-      }
-      finish(result);
+      // 이미 찍힌 면도 새로 읽은 것으로 바꾼다 (다시 찍으면 고쳐지도록).
+      const next = [...scanned];
+      for (const cell of placed.cells) next[cell.index] = cell.rgb;
+      setScanned(next);
+      if (next.every((c) => c !== null)) finish(finishScan(next));
       return;
     }
 
@@ -312,8 +308,8 @@ export function ScanView({ onDone, onCancel }: Props) {
 
   const back = () => {
     setProblem(null);
-    setStepIndex(stepIndex - 1);
-    if (mode === 'corners') setFirstCorner(null);
+    if (mode === 'corners') setScanned(EMPTY);
+    else setStepIndex(stepIndex - 1);
   };
 
   // 화면에 찍을 점: 찾아낸 칸의 위치와 어림 색
@@ -341,11 +337,13 @@ export function ScanView({ onDone, onCancel }: Props) {
 
   // 찍기 전에 미리 알려 줄 수 있는 문제
   let warning: string | null = null;
-  if (mode === 'corners' && firstCorner && seen?.corner) {
-    const before = centerColors(firstCorner);
-    const again = centerColors(seen.corner).filter((c) => before.includes(c));
-    if (again.length > 0) {
-      warning = `${again.map((c) => COLOR_NAMES[c]).join(', ')} 센터는 이미 찍은 면이에요. 큐브를 뒤집어 반대쪽 꼭짓점을 보여 주세요.`;
+  /** 지금 화면에 보이는 세 면이 큐브의 어느 면인지 (알아냈을 때) */
+  const showing = mode === 'corners' && seen?.corner ? placeCorner(seen.corner) : null;
+  if (mode === 'corners' && seen?.corner) {
+    if (!showing) {
+      warning = '가운데 칸의 색을 알아보지 못했어요. 세 면이 고르게 보이게 하고, 빛이 번쩍이지 않게 해 주세요.';
+    } else if (doneFaces.length > 0 && showing.faces.every((f) => doneFaces.includes(f))) {
+      warning = `지금 보이는 세 면은 이미 찍었어요. ${missing.map((f) => COLOR_NAMES[f]).join(', ')} 센터가 보이게 큐브를 돌려 주세요.`;
     }
   }
   if (mode === 'faces' && seen?.face && guessColor(seen.face.colors[4]) !== FACE_STEPS[stepIndex].face) {
@@ -354,9 +352,16 @@ export function ScanView({ onDone, onCancel }: Props) {
 
   const title =
     mode === 'corners'
-      ? `${stepIndex + 1}번째 사진: ${stepIndex === 0 ? '꼭짓점 쪽에서' : '반대쪽 꼭짓점에서'}`
+      ? doneFaces.length === 0
+        ? '세 면이 보이게 찍어요'
+        : `남은 면: ${missing.map((f) => COLOR_NAMES[f]).join(', ')}`
       : `${stepIndex + 1}번째 면: ${COLOR_NAMES[FACE_STEPS[stepIndex].face]} 센터`;
-  const how = mode === 'corners' ? CORNER_HOW[stepIndex] : FACE_STEPS[stepIndex].how;
+  const how =
+    mode === 'corners'
+      ? doneFaces.length === 0
+        ? ['큐브의 꼭짓점 하나가 카메라를 보게 들어요. 세 면이 모두 넉넉히 보여야 해요.', '어느 쪽이든, 어떻게 기울이든 괜찮아요. 찍으면 어느 면인지 알아서 기록해요.']
+        : ['아직 안 찍은 면의 센터가 보이게 큐브를 돌려서 찍어요. 이미 찍은 면이 함께 보여도 괜찮아요.']
+      : FACE_STEPS[stepIndex].how;
   const wanted = mode === 'corners' ? 27 : 9;
 
   return (
@@ -399,19 +404,37 @@ export function ScanView({ onDone, onCancel }: Props) {
             <button className="link" onClick={onCancel}>
               ← 큐브 입력
             </button>
-            <span className="muted">
-              {stepIndex + 1} / {stepCount}
-            </span>
+            <span className="muted">{mode === 'corners' ? `${doneFaces.length} / 6면` : `${stepIndex + 1} / ${FACE_STEPS.length}`}</span>
           </div>
 
           <div className="segmented scan__mode" role="radiogroup" aria-label="찍는 방법">
             <button role="radio" aria-checked={mode === 'corners'} onClick={() => mode !== 'corners' && restart('corners')}>
-              두 번에 찍기
+              자유롭게 찍기
             </button>
             <button role="radio" aria-checked={mode === 'faces'} onClick={() => mode !== 'faces' && restart('faces')}>
-              여섯 번에 찍기
+              한 면씩 찍기
             </button>
           </div>
+
+          {mode === 'corners' && (
+            <div className="scan__progress" aria-label="찍은 면">
+              {[0, 1, 2, 3, 4, 5].map((f) => {
+                const done = doneFaces.includes(f);
+                const now = showing?.faces.includes(f) === true;
+                return (
+                  <span
+                    key={f}
+                    className={`scan__chip${done ? ' scan__chip--done' : ''}${now ? ' scan__chip--now' : ''}`}
+                    style={{ background: STICKER_COLORS[f] }}
+                    title={COLOR_NAMES[f]}
+                  >
+                    {done ? '✓' : ''}
+                  </span>
+                );
+              })}
+              <span className="muted">테두리가 밝은 것이 지금 보이는 면이에요</span>
+            </div>
+          )}
 
           <h2 className="lesson__title">{title}</h2>
           {how.map((line) => (
@@ -434,8 +457,8 @@ export function ScanView({ onDone, onCancel }: Props) {
           </p>
         </div>
         <div className="lesson__nav">
-          <button className="btn" onClick={back} disabled={stepIndex === 0}>
-            이전 사진
+          <button className="btn" onClick={back} disabled={mode === 'corners' ? doneFaces.length === 0 : stepIndex === 0}>
+            {mode === 'corners' ? '처음부터' : '이전 면'}
           </button>
           <button className="btn btn--primary" onClick={capture} disabled={status !== 'live' || !found}>
             찍기

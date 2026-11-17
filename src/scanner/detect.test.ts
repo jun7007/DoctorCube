@@ -194,3 +194,57 @@ describe('렌더링 그림 (틈이 있는 큐브)', { timeout: 120000 }, () => {
     expect(readFace(blank)).toBeNull();
   });
 });
+
+describe('자유롭게 찍기: 사진 한 장씩 큐브에 올려 놓기', { timeout: 120000 }, () => {
+  it('렌더링 그림: 한 장만으로 어느 세 면인지 알고, 칸의 색이 정답과 같다', async () => {
+    const { placeCorner } = await import('./assemble');
+    let placed = 0;
+    let wrongCells = 0;
+    for (const cube of index) {
+      for (const shot of ['a', 'b']) {
+        const reading = readCorner(await load(`${cube.id}-${shot}.png`));
+        const p = reading && placeCorner(reading);
+        if (!p) continue;
+        placed++;
+        expect(new Set(p.faces.map((f) => f % 3)).size).toBe(3);
+        for (const cell of p.cells) if (guessColor(cell.rgb) !== cube.state[cell.index]) wrongCells++;
+      }
+    }
+    console.log(`한 장씩 올려 놓기: ${index.length * 2}장 중 ${placed}장, 틀린 칸 ${wrongCells}개`);
+    expect(placed).toBeGreaterThanOrEqual(10);
+    // 원근이 아주 강한 그림에서 틀리는 칸이 있다 (전체 54칸 맞추기 시험과 같은 그림들).
+    expect(wrongCells).toBeLessThanOrEqual(40);
+  });
+
+  it('렌더링 그림: 두 장으로 여섯 면이 모두 채워지고, 합친 결과가 예전 방식과 같다', async () => {
+    const { placeCorner, finishScan } = await import('./assemble');
+    for (const cube of index) {
+      const a = readCorner(await load(`${cube.id}-a.png`));
+      const b = readCorner(await load(`${cube.id}-b.png`));
+      const pa = a && placeCorner(a);
+      const pb = b && placeCorner(b);
+      if (!a || !b || !pa || !pb) continue;
+      const colors = new Array<[number, number, number] | null>(54).fill(null);
+      for (const cell of [...pa.cells, ...pb.cells]) colors[cell.index] = [...cell.rgb] as [number, number, number];
+      expect(colors.every((c) => c !== null), cube.id).toBe(true);
+      expect(new Set([...pa.faces, ...pb.faces]).size, cube.id).toBe(6);
+      expect(finishScan(colors).state.join(), cube.id).toBe(assembleCorners(a, b).state.join());
+    }
+  });
+});
+
+describe.skipIf(!hasPhotos)('자유롭게 찍기: 실제 사진', { timeout: 120000 }, () => {
+  it('꼭짓점 쪽 사진 한 장만으로 어느 세 면인지 정해진다', async () => {
+    const { placeCorner } = await import('./assemble');
+    const faces: string[] = [];
+    for (const name of ['20261117_232256.jpg', '20261117_232305.jpg', '20261117_232314.jpg', '20261117_232321.jpg']) {
+      const reading = readCorner(await photo(name));
+      const p = reading && placeCorner(reading);
+      expect(p, name).not.toBeNull();
+      faces.push([...p!.faces].sort().map((f) => NAMES[f]).join(''));
+    }
+    console.log('사진별 세 면:', faces.join(' / '));
+    expect(faces[1]).toBe(faces[0]);
+    expect(faces[2]).toBe(faces[0]);
+  });
+});
