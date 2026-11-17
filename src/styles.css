@@ -1152,34 +1152,38 @@ kbd {
   object-fit: cover;
 }
 
-/* 안내 격자: 카메라 화면 짧은 변의 66% (ScanView의 GUIDE와 같아야 한다) */
-.scan__guide {
+/* 찾아낸 칸을 영상 위에 점으로 표시한다 */
+.scan__overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.scan__dot {
+  stroke: #fff;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 2px rgb(0 0 0 / 90%));
+}
+
+.scan__state {
   position: absolute;
   left: 50%;
-  top: 50%;
-  width: min(66cqw, 66cqh);
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  border: 2px solid #fff;
-  border-radius: 10px;
-  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 45%);
-  overflow: hidden;
+  top: 10px;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 65%);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
-.scan__cell {
-  display: grid;
-  place-items: center;
-  border: 1px solid rgb(255 255 255 / 70%);
-}
-
-.scan__cell i {
-  width: 34%;
-  aspect-ratio: 1;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 60%);
+.scan__state--found {
+  background: var(--good);
+  color: #06281a;
 }
 
 .scan__message {
@@ -1198,74 +1202,8 @@ kbd {
   color: var(--warn);
 }
 
-/* 모서리에서 찍기의 안내 육각형: 카메라 화면 짧은 변의 80% (ScanView의 GUIDE와 같아야 한다) */
-.scan__hex {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: min(80cqw, 80cqh);
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  overflow: visible;
-}
-
-.scan__hex polygon {
-  fill: none;
-  stroke: #fff;
-  stroke-width: 0.012;
-  stroke-linejoin: round;
-  filter: drop-shadow(0 0 0.01px #000);
-}
-
-/* 흰색 칸 위에서도 보이도록 어두운 그림자를 둔다 */
-.scan__ring {
-  fill: none;
-  stroke-width: 0.03;
-  filter: drop-shadow(0 0 0.012px rgb(0 0 0 / 90%));
-}
-
-.scan__dot {
-  stroke: #fff;
-  stroke-width: 0.012;
-  filter: drop-shadow(0 0 0.012px rgb(0 0 0 / 90%));
-}
-
-.route__voice {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.route__voice input {
-  width: 20px;
-  height: 20px;
-  accent-color: var(--accent);
-}
-
 .scan__mode {
   align-self: flex-start;
-}
-
-/* 지금까지 읽은 색을 보여 주는 작은 전개도 */
-.scan__net {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 1px;
-  width: 100%;
-  max-width: 264px;
-}
-
-.scan__net span {
-  aspect-ratio: 1;
-  border-radius: 2px;
-  background: var(--surface-3);
-}
-
-.scan__net .scan__net-empty {
-  opacity: 0.4;
 }
 
 .route__scan {
