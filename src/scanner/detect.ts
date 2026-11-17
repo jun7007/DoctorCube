@@ -1,409 +1,211 @@
 /**
- * 사진에서 큐브를 찾아낸다. 사용자가 안내선에 맞출 필요 없이, 어떻게 찍든 스티커를 직접 찾는다.
+ * 사진에서 큐브를 찾아 칸마다 색을 읽는다.
  *
- * 1. 색이 고른 조각(스티커 후보)을 모두 찾는다. 스티커 사이의 검은 틈이 조각을 나눠 준다.
- * 2. 한 조각을 가운데로 3×3 격자를 이루는 묶음을 찾는다. 이것이 큐브의 한 면이다.
- * 3. 꼭짓점 쪽에서 찍은 사진이면 그런 면이 셋이고, 세 면이 만나는 꼭짓점을 기준으로 칸의 순서를 정한다.
- *
- * 원근 때문에 격자가 반듯하지 않아도 되도록, 위치를 맞춰 볼 때 넉넉한 오차를 허용한다.
+ * 1. 큐브의 겉 윤곽을 찾는다 (outline.ts): 한 면이면 사각형, 꼭짓점 쪽에서 보면 육각형.
+ * 2. 꼭짓점 쪽 사진이면 세 면이 만나는 가운데 점을 찾아 면 세 개(사각형)로 나눈다.
+ * 3. 각 면을 3×3으로 균등하게 나누고, 칸 안의 색이 가장 고르게 나오도록 꼭짓점을 조금씩 움직여 맞춘다.
+ *    칸 사이에 틈이 없는 큐브도, 칸이 색 경계에 걸치지 않게 맞추면 제자리에 놓인다.
+ * 4. 모든 칸의 색을 칸 가운데에서 읽는다.
  */
+import { findOutline, type Point } from './outline';
 import type { PixelSource, RGB } from './sample';
 
-/** 큐브를 찾을 때 쓰는 그림의 가로 크기(픽셀). 화면(ScanView)과 시험이 같은 값을 쓴다. 클수록 멀리 있는 큐브도 찾지만 느리다. */
+export type { Point } from './outline';
+
+/** 큐브를 찾을 때 쓰는 그림의 가로 크기(픽셀). 화면(ScanView)과 시험이 같은 값을 쓴다. */
 export const DETECT_WIDTH = 400;
 
-export interface Point {
-  x: number;
-  y: number;
+// ───────── 사각형 안의 위치 ─────────
+
+/** 단위 정사각형의 (u, v) → 사각형 안의 점. 원근이 있어도 맞도록 사영 변환을 쓴다. */
+type Mapping = (u: number, v: number) => Point;
+
+/** 네 꼭짓점 q0(0,0), q1(1,0), q2(1,1), q3(0,1)에 맞는 사영 변환 */
+function quadMapping(q: readonly Point[]): Mapping {
+  // 정사각형 → 사각형의 사영 변환은 닫힌 식으로 구할 수 있다.
+  const [p0, p1, p2, p3] = q;
+  const sx = p0.x - p1.x + p2.x - p3.x;
+  const sy = p0.y - p1.y + p2.y - p3.y;
+  const dx1 = p1.x - p2.x;
+  const dy1 = p1.y - p2.y;
+  const dx2 = p3.x - p2.x;
+  const dy2 = p3.y - p2.y;
+  const den = dx1 * dy2 - dx2 * dy1;
+  const g = Math.abs(den) < 1e-12 ? 0 : (sx * dy2 - dx2 * sy) / den;
+  const h = Math.abs(den) < 1e-12 ? 0 : (dx1 * sy - sx * dy1) / den;
+  const a = p1.x - p0.x + g * p1.x;
+  const b = p3.x - p0.x + h * p3.x;
+  const d = p1.y - p0.y + g * p1.y;
+  const e = p3.y - p0.y + h * p3.y;
+  return (u, v) => {
+    const w = g * u + h * v + 1;
+    return { x: (a * u + b * v + p0.x) / w, y: (d * u + e * v + p0.y) / w };
+  };
 }
 
-/** 색이 고른 조각 하나 */
-export interface Blob extends Point {
-  area: number;
-  rgb: RGB;
+function pixel(image: PixelSource, p: Point): RGB | null {
+  const x = Math.round(p.x);
+  const y = Math.round(p.y);
+  if (x < 0 || y < 0 || x >= image.width || y >= image.height) return null;
+  const i = (y * image.width + x) * 4;
+  return [image.data[i], image.data[i + 1], image.data[i + 2]];
 }
 
-/** 면의 한 칸 */
-export interface Cell extends Point {
-  rgb: RGB;
-  /** 조각으로 직접 찾았는지 (아니면 격자에서 예상한 자리의 색을 읽은 것) */
-  found: boolean;
-}
+const median = (values: number[]) => values.sort((a, b) => a - b)[values.length >> 1];
 
-/** 3×3으로 놓인 한 면. cells[i][j]에서 가운데는 cells[1][1] */
-export interface Grid {
-  cells: Cell[][];
-  /** 격자가 얼마나 반듯한지 (작을수록 좋다) */
-  residual: number;
-}
+/** 칸 안에서 색을 볼 자리들 (칸 크기를 1로 봤을 때의 위치). 가장자리는 이웃 칸이나 이음매가 섞이므로 피한다. */
+const PROBES: readonly (readonly [number, number])[] = (() => {
+  const out: [number, number][] = [];
+  for (const u of [0.26, 0.42, 0.58, 0.74]) for (const v of [0.26, 0.42, 0.58, 0.74]) out.push([u, v]);
+  return out;
+})();
 
-// ───────── 1. 조각 찾기 ─────────
-
-/** 이웃한 두 픽셀을 같은 조각으로 보는 색 차이 (세 채널 차이의 합) */
-const SIMILAR = 34;
 /**
- * 픽셀이나 조각을 한 조각에 넣을 때, 그 조각의 평균 색과 달라도 되는 정도.
- * 이웃끼리만 비교하면 색이 조금씩 변하는 경계를 타고 다른 것(예: 흰 스티커와 밝은 배경)이 한 덩어리가 된다.
+ * 한 면(사각형)을 3×3으로 나눴을 때 각 칸의 색과, 칸 안의 색이 얼마나 고르지 않은지.
+ * 고르지 않은 정도는 칸 안의 점들이 칸의 대표 색에서 벗어난 정도다. 칸이 색 경계에 걸치면 커진다.
  */
-const SAME_BLOB = 38;
-/** 이보다 어두운 픽셀은 틈이나 그림자로 보고 버린다 */
-const DARK = 42;
-
-export function findBlobs(image: PixelSource): Blob[] {
-  const { data, width, height } = image;
-  const n = width * height;
-  const parent = new Int32Array(n).fill(-1);
-  // 조각(대표 픽셀)마다 지금까지의 색 합과 픽셀 수
-  const sumR = new Float32Array(n);
-  const sumG = new Float32Array(n);
-  const sumB = new Float32Array(n);
-  const count = new Int32Array(n);
-  const find = (i: number): number => {
-    while (parent[i] !== i) {
-      parent[i] = parent[parent[i]];
-      i = parent[i];
-    }
-    return i;
-  };
-  const bright = (i: number) => (data[i * 4] * 3 + data[i * 4 + 1] * 6 + data[i * 4 + 2]) / 10 >= DARK;
-  const similar = (a: number, b: number) =>
-    Math.abs(data[a * 4] - data[b * 4]) + Math.abs(data[a * 4 + 1] - data[b * 4 + 1]) + Math.abs(data[a * 4 + 2] - data[b * 4 + 2]) <=
-    SIMILAR;
-  /** 픽셀 i의 색이 조각 root의 평균 색과 비슷한지 */
-  const fits = (i: number, root: number) =>
-    Math.abs(data[i * 4] - sumR[root] / count[root]) +
-      Math.abs(data[i * 4 + 1] - sumG[root] / count[root]) +
-      Math.abs(data[i * 4 + 2] - sumB[root] / count[root]) <=
-    SAME_BLOB;
-  const sameColor = (a: number, b: number) =>
-    Math.abs(sumR[a] / count[a] - sumR[b] / count[b]) +
-      Math.abs(sumG[a] / count[a] - sumG[b] / count[b]) +
-      Math.abs(sumB[a] / count[a] - sumB[b] / count[b]) <=
-    SAME_BLOB;
-  const add = (i: number, root: number) => {
-    parent[i] = root;
-    sumR[root] += data[i * 4];
-    sumG[root] += data[i * 4 + 1];
-    sumB[root] += data[i * 4 + 2];
-    count[root]++;
-  };
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = y * width + x;
-      if (!bright(i)) continue;
-      const left = x > 0 && parent[i - 1] >= 0 && similar(i, i - 1) ? find(i - 1) : -1;
-      const up = y > 0 && parent[i - width] >= 0 && similar(i, i - width) ? find(i - width) : -1;
-      const joinLeft = left >= 0 && fits(i, left);
-      const joinUp = up >= 0 && fits(i, up);
-      if (joinLeft) add(i, left);
-      else if (joinUp) add(i, up);
-      else add(i, i);
-      // 왼쪽 조각과 위쪽 조각이 이 픽셀에서 만나면, 평균 색이 비슷할 때만 하나로 합친다.
-      if (joinLeft && joinUp && left !== up && sameColor(left, up)) {
-        parent[up] = left;
-        sumR[left] += sumR[up];
-        sumG[left] += sumG[up];
-        sumB[left] += sumB[up];
-        count[left] += count[up];
+function readQuad(image: PixelSource, quad: readonly Point[]): { colors: RGB[]; points: Point[]; rough: number } | null {
+  const map = quadMapping(quad);
+  const colors: RGB[] = [];
+  const points: Point[] = [];
+  let rough = 0;
+  for (let j = 0; j < 3; j++) {
+    for (let i = 0; i < 3; i++) {
+      const r: number[] = [];
+      const g: number[] = [];
+      const b: number[] = [];
+      for (const [u, v] of PROBES) {
+        const c = pixel(image, map((i + u) / 3, (j + v) / 3));
+        if (!c) return null;
+        r.push(c[0]);
+        g.push(c[1]);
+        b.push(c[2]);
       }
-    }
-  }
-
-  // 조각마다 넓이, 무게중심, 퍼진 정도, 평균 색을 모은다.
-  const stats = new Map<number, Float64Array>();
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = y * width + x;
-      if (parent[i] < 0) continue;
-      const root = find(i);
-      let s = stats.get(root);
-      if (!s) stats.set(root, (s = new Float64Array(9)));
-      s[0]++;
-      s[1] += x;
-      s[2] += y;
-      s[3] += x * x;
-      s[4] += y * y;
-      s[5] += x * y;
-      s[6] += data[i * 4];
-      s[7] += data[i * 4 + 1];
-      s[8] += data[i * 4 + 2];
-    }
-  }
-
-  const blobs: Blob[] = [];
-  const minArea = Math.max(14, n / 5000);
-  const maxArea = n / 10;
-  for (const s of stats.values()) {
-    const area = s[0];
-    if (area < minArea || area > maxArea) continue;
-    const x = s[1] / area;
-    const y = s[2] / area;
-    const xx = s[3] / area - x * x;
-    const yy = s[4] / area - y * y;
-    const xy = s[5] / area - x * y;
-    const det = xx * yy - xy * xy;
-    if (det <= 0) continue;
-    // 평행사변형이면 넓이 = 12·√det. 들쭉날쭉하거나 속이 빈 모양은 이 비율이 작다.
-    const fill = area / (12 * Math.sqrt(det));
-    if (fill < 0.72 || fill > 1.3) continue;
-    // 너무 길쭉한 것은 스티커가 아니다.
-    const trace = xx + yy;
-    const root = Math.sqrt(Math.max(0, trace * trace - 4 * det));
-    if ((trace + root) / Math.max(1e-6, trace - root) > 30) continue;
-    const rgb: RGB = [s[6] / area, s[7] / area, s[8] / area];
-    if (Math.max(rgb[0], rgb[1], rgb[2]) < 70) continue;
-    blobs.push({ x, y, area, rgb });
-  }
-  return blobs;
-}
-
-// ───────── 2. 3×3 격자 찾기 ─────────
-
-const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
-
-/** 처음에 반듯한 격자로 어림할 때, 예상 위치에서 벗어나도 되는 정도 (칸 간격 대비) */
-const ROUGH_TOLERANCE = 0.55;
-/** 원근 변환에 맞춘 뒤, 예상 위치에서 벗어나도 되는 정도 */
-const FINE_TOLERANCE = 0.33;
-/**
- * 가운데 칸을 뺀 여덟 칸 중 이만큼은 실제 조각으로 찾아야 면으로 인정한다.
- * 세 칸까지는 빠져도 된다 (흰 스티커가 밝은 배경에 묻히거나, 빛이 번쩍여 조각이 깨진 경우).
- */
-const MIN_FOUND = 5;
-
-/** 원근 변환에 맞춘 뒤 조각들이 예상 자리에서 벗어난 평균 거리의 한도 (칸 간격 대비) */
-const MAX_ERROR = 0.09;
-
-/** 격자 좌표(-1, 0, 1) → 그림 좌표. 원근이 있어도 맞도록 사영 변환으로 맞춘다. */
-type Mapping = (i: number, j: number) => Point;
-
-/** 대응점들에 가장 잘 맞는 사영 변환을 구한다 (최소 제곱). 점이 4개보다 적거나 풀 수 없으면 null. */
-function fitMapping(pairs: readonly { i: number; j: number; x: number; y: number }[]): Mapping | null {
-  if (pairs.length < 4) return null;
-  // x = (h0·i + h1·j + h2) / (h6·i + h7·j + 1), y = (h3·i + h4·j + h5) / (같은 분모)
-  const ata = Array.from({ length: 8 }, () => new Float64Array(9));
-  const accumulate = (row: number[], value: number) => {
-    for (let r = 0; r < 8; r++) {
-      if (row[r] === 0) continue;
-      for (let c = 0; c < 8; c++) ata[r][c] += row[r] * row[c];
-      ata[r][8] += row[r] * value;
-    }
-  };
-  for (const { i, j, x, y } of pairs) {
-    accumulate([i, j, 1, 0, 0, 0, -x * i, -x * j], x);
-    accumulate([0, 0, 0, i, j, 1, -y * i, -y * j], y);
-  }
-  // 가우스 소거
-  for (let col = 0; col < 8; col++) {
-    let pivot = col;
-    for (let r = col + 1; r < 8; r++) if (Math.abs(ata[r][col]) > Math.abs(ata[pivot][col])) pivot = r;
-    if (Math.abs(ata[pivot][col]) < 1e-9) return null;
-    [ata[col], ata[pivot]] = [ata[pivot], ata[col]];
-    for (let r = 0; r < 8; r++) {
-      if (r === col) continue;
-      const factor = ata[r][col] / ata[col][col];
-      if (factor === 0) continue;
-      for (let c = col; c < 9; c++) ata[r][c] -= factor * ata[col][c];
-    }
-  }
-  const h = ata.map((row, k) => row[8] / row[k]);
-  return (i, j) => {
-    const w = h[6] * i + h[7] * j + 1;
-    return { x: (h[0] * i + h[1] * j + h[2]) / w, y: (h[3] * i + h[4] * j + h[5]) / w };
-  };
-}
-
-const OFFSETS: readonly (readonly [number, number])[] = [
-  [-1, -1],
-  [-1, 0],
-  [-1, 1],
-  [0, -1],
-  [0, 1],
-  [1, -1],
-  [1, 0],
-  [1, 1],
-];
-
-interface Candidate {
-  center: Blob;
-  /** OFFSETS 순서로, 그 자리에서 찾은 조각 (없으면 null) */
-  found: (Blob | null)[];
-  mapping: Mapping;
-  spacing: number;
-  residual: number;
-}
-
-/** 이 조각을 가운데로 하는 3×3 격자를 찾는다. */
-function gridAround(image: PixelSource, center: Blob, blobs: readonly Blob[]): Candidate | null {
-  const reach = 3.8 * Math.sqrt(center.area);
-  const near = blobs
-    .filter((b) => b !== center && b.area > center.area * 0.2 && b.area < center.area * 5 && dist(b, center) < reach)
-    .sort((a, b) => dist(a, center) - dist(b, center))
-    .slice(0, 18);
-  if (near.length < MIN_FOUND) return null;
-
-  /** 예상 위치마다 가장 가까운 조각을 고른다 (한 조각은 한 자리에만). */
-  const match = (mapping: Mapping, tolerance: number) => {
-    const used = new Set<Blob>();
-    let error = 0;
-    const found = OFFSETS.map(([i, j]) => {
-      const target = mapping(i, j);
-      let best: Blob | null = null;
-      let bestD = tolerance;
-      for (const b of near) {
-        if (used.has(b)) continue;
-        const d = dist(b, target);
-        if (d < bestD) {
-          bestD = d;
-          best = b;
+      let color: RGB = [median([...r]), median([...g]), median([...b])];
+      // 칸이 색 경계에 조금만 걸쳐도 드러나도록, 벗어난 정도는 평균으로 본다.
+      const off = r.map((_, k) => Math.abs(r[k] - color[0]) + Math.abs(g[k] - color[1]) + Math.abs(b[k] - color[2]));
+      rough += off.reduce((x, y) => x + y, 0) / off.length;
+      // 면의 가운데 칸에는 로고가 있을 수 있다 (보통 흰색 센터에 있다). 흰 부분이 꽤 보이면 흰색 칸으로 읽는다.
+      if (i === 1 && j === 1) {
+        const white = r.map((_, k) => k).filter((k) => {
+          const max = Math.max(r[k], g[k], b[k]);
+          return max >= 120 && (max - Math.min(r[k], g[k], b[k])) / max < 0.22;
+        });
+        if (white.length >= r.length * 0.25 && white.length < r.length) {
+          color = [median(white.map((k) => r[k])), median(white.map((k) => g[k])), median(white.map((k) => b[k]))];
         }
       }
-      if (best) {
-        used.add(best);
-        error += bestD;
-      }
-      return best;
-    });
-    return { found, count: used.size, error };
-  };
+      colors.push(color);
+      points.push(map((i + 0.5) / 3, (j + 0.5) / 3));
+    }
+  }
+  return { colors, points, rough: rough / 9 };
+}
 
-  let best: Candidate | null = null;
-  const first = near.slice(0, 9);
-  for (let a = 0; a < first.length; a++) {
-    for (let b = a + 1; b < first.length; b++) {
-      const u = { x: first[a].x - center.x, y: first[a].y - center.y };
-      const v = { x: first[b].x - center.x, y: first[b].y - center.y };
-      const lu = Math.hypot(u.x, u.y);
-      const lv = Math.hypot(v.x, v.y);
-      // 두 방향이 거의 나란하거나 길이가 너무 다르면 격자의 두 축이 아니다.
-      if (Math.abs(u.x * v.y - u.y * v.x) < 0.35 * lu * lv || lu > 2.6 * lv || lv > 2.6 * lu) continue;
-      let spacing = Math.min(lu, lv);
+/** 칸들의 색이 이보다 고르지 않으면 큐브를 제대로 잡지 못한 것으로 본다 */
+const MAX_ROUGH = 45;
+/** 가장자리 한 줄을 더 내보낸 쪽을 고르려면 이만큼은 더 잘 맞아야 한다 (비슷하면 윤곽 그대로 둔다) */
+const EXTEND_MARGIN = 1.5;
 
-      // 먼저 반듯한 격자로 어림하고, 찾은 조각들로 원근 변환을 맞춰 다시 본다.
-      let mapping: Mapping = (i, j) => ({ x: center.x + i * u.x + j * v.x, y: center.y + i * u.y + j * v.y });
-      let result = match(mapping, ROUGH_TOLERANCE * spacing);
-      for (let round = 0; round < 2 && result.count >= 5; round++) {
-        const pairs = [{ i: 0, j: 0, x: center.x, y: center.y }];
-        result.found.forEach((blob, k) => {
-          if (blob) pairs.push({ i: OFFSETS[k][0], j: OFFSETS[k][1], x: blob.x, y: blob.y });
-        });
-        const fitted = fitMapping(pairs);
-        if (!fitted) break;
-        mapping = fitted;
-        const right = mapping(1, 0);
-        const down = mapping(0, 1);
-        spacing = Math.min(dist(right, mapping(0, 0)), dist(down, mapping(0, 0)));
-        result = match(mapping, FINE_TOLERANCE * spacing);
+/** from에서 to 쪽으로 1.5배 늘인 점. 세 줄 가운데 두 줄만 보였을 때 가려진 한 줄을 되살린다. */
+const stretch = (from: Point, to: Point): Point => ({ x: from.x + 1.5 * (to.x - from.x), y: from.y + 1.5 * (to.y - from.y) });
+
+const size = (points: readonly Point[]) =>
+  Math.max(
+    Math.max(...points.map((p) => p.x)) - Math.min(...points.map((p) => p.x)),
+    Math.max(...points.map((p) => p.y)) - Math.min(...points.map((p) => p.y)),
+  );
+
+/**
+ * 점들을 조금씩 움직여 score가 가장 작아지는 자리를 찾는다.
+ * movable에 든 점만, 처음 자리에서 limit 안에서 움직인다.
+ */
+function refine(points: Point[], movable: readonly number[], limit: number, score: (p: readonly Point[]) => number): number {
+  const start = points.map((p) => ({ ...p }));
+  let best = score(points);
+  for (const step of [limit / 2, limit / 4, limit / 8]) {
+    for (let round = 0; round < 3; round++) {
+      let improved = false;
+      for (const k of movable) {
+        for (const [dx, dy] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ]) {
+          const before = points[k];
+          const moved = { x: before.x + dx * step, y: before.y + dy * step };
+          if (Math.abs(moved.x - start[k].x) > limit || Math.abs(moved.y - start[k].y) > limit) continue;
+          points[k] = moved;
+          const s = score(points);
+          if (s < best - 1e-9) {
+            best = s;
+            improved = true;
+          } else {
+            points[k] = before;
+          }
+        }
       }
-      if (result.count < MIN_FOUND) continue;
-      // 빠진 칸의 예상 자리는 스티커처럼 밝아야 한다. 검은 틈이나 큐브 바깥이면 엉뚱한 격자다.
-      const missingLooksWrong = result.found.some((blob, k) => {
-        if (blob) return false;
-        const at = mapping(OFFSETS[k][0], OFFSETS[k][1]);
-        const [r, g, b] = samplePatch(image, at, spacing * 0.16);
-        return (r * 3 + g * 6 + b) / 10 < 90;
-      });
-      if (missingLooksWrong) continue;
-      // 진짜 면이면 조각들이 예상 자리에 거의 정확히 놓인다. 여러 면에 걸쳐 느슨하게 맞은 격자는 버린다.
-      const error = result.error / result.count / spacing;
-      if (error > MAX_ERROR) continue;
-      // 한 면 안의 스티커는 크기가 비슷하다 (원근으로 달라지는 정도까지만 허용).
-      const areas = result.found.filter((b): b is Blob => b !== null).map((b) => b.area);
-      if (Math.min(...areas) < center.area * 0.35 || Math.max(...areas) > center.area * 2.8) continue;
-      // 빠진 칸이 있으면 조금 덜 믿는다.
-      const residual = error + (8 - result.count) * 0.03;
-      if (!best || residual < best.residual) best = { center, found: result.found, mapping, spacing, residual };
+      if (!improved) break;
     }
   }
   return best;
 }
 
-/** 그림의 한 점 둘레에서 대표 색(채널별 중앙값)을 읽는다. 조각으로 못 찾은 칸의 색을 채울 때 쓴다. */
-function samplePatch(image: PixelSource, at: Point, radius: number): RGB {
-  const channels: [number[], number[], number[]] = [[], [], []];
-  const r = Math.max(1, Math.round(radius));
-  for (let y = Math.round(at.y) - r; y <= Math.round(at.y) + r; y++) {
-    if (y < 0 || y >= image.height) continue;
-    for (let x = Math.round(at.x) - r; x <= Math.round(at.x) + r; x++) {
-      if (x < 0 || x >= image.width) continue;
-      const i = (y * image.width + x) * 4;
-      channels[0].push(image.data[i]);
-      channels[1].push(image.data[i + 1]);
-      channels[2].push(image.data[i + 2]);
-    }
-  }
-  if (channels[0].length === 0) return [0, 0, 0];
-  const median = (values: number[]) => values.sort((a, b) => a - b)[values.length >> 1];
-  return [median(channels[0]), median(channels[1]), median(channels[2])];
-}
-
-/** 그림에서 서로 겹치지 않는 3×3 면들을 찾아, 믿을 만한 순서로 돌려준다. */
-export function findGrids(image: PixelSource): Grid[] {
-  const blobs = findBlobs(image);
-  const candidates: Candidate[] = [];
-  for (const blob of blobs) {
-    const candidate = gridAround(image, blob, blobs);
-    if (candidate) candidates.push(candidate);
-  }
-  candidates.sort((a, b) => a.residual - b.residual);
-
-  const taken = new Set<Blob>();
-  const grids: Grid[] = [];
-  for (const c of candidates) {
-    const members = [c.center, ...c.found.filter((b): b is Blob => b !== null)];
-    if (members.some((b) => taken.has(b))) continue;
-    members.forEach((b) => taken.add(b));
-    const cells: Cell[][] = [[], [], []];
-    for (let i = -1; i <= 1; i++) {
-      for (let j = -1; j <= 1; j++) {
-        const k = OFFSETS.findIndex(([a, b]) => a === i && b === j);
-        const blob = i === 0 && j === 0 ? c.center : c.found[k];
-        if (blob) {
-          cells[i + 1][j + 1] = { x: blob.x, y: blob.y, rgb: blob.rgb, found: true };
-        } else {
-          const at = c.mapping(i, j);
-          cells[i + 1][j + 1] = { x: at.x, y: at.y, rgb: samplePatch(image, at, c.spacing * 0.16), found: false };
-        }
-      }
-    }
-    grids.push({ cells, residual: c.residual });
-  }
-  return grids;
-}
-
-// ───────── 3. 한 면 읽기 ─────────
+// ───────── 한 면 읽기 ─────────
 
 export interface FaceReading {
   /** 화면에 보이는 대로 왼쪽 위 → 오른쪽 아래 9칸의 색 */
   colors: RGB[];
-  /** 같은 순서의 칸 위치 (화면에 표시할 때 쓴다) */
+  /** 같은 순서의 칸 가운데 위치 */
   points: Point[];
+  /** 찾아낸 면의 네 꼭짓점: 왼쪽 위, 오른쪽 위, 오른쪽 아래, 왼쪽 아래 */
+  outline: Point[];
+  /** 칸 안의 색이 고르지 않은 정도 (작을수록 잘 맞은 것) */
+  rough: number;
 }
 
 /** 한 면을 정면에서 찍은 사진을 읽는다. 큐브를 대체로 똑바로 들고 있다고 본다. */
 export function readFace(image: PixelSource): FaceReading | null {
-  const grid = findGrids(image)[0];
-  if (!grid) return null;
-  const c = grid.cells;
-  // 두 격자 방향 중 가로에 가까운 쪽을 열로, 나머지를 행으로 삼는다.
-  const di = { x: c[2][1].x - c[0][1].x, y: c[2][1].y - c[0][1].y };
-  const dj = { x: c[1][2].x - c[1][0].x, y: c[1][2].y - c[1][0].y };
-  const iIsColumn = Math.abs(di.x) * Math.abs(dj.y) > Math.abs(dj.x) * Math.abs(di.y);
-  const column = iIsColumn ? di : dj;
-  const row = iIsColumn ? dj : di;
-  const cells: Cell[] = [];
-  for (let r = 0; r < 3; r++) {
-    for (let col = 0; col < 3; col++) {
-      const cc = column.x >= 0 ? col : 2 - col;
-      const rr = row.y >= 0 ? r : 2 - r;
-      cells.push(iIsColumn ? c[cc][rr] : c[rr][cc]);
+  const found = findOutline(image, 4);
+  if (!found) return null;
+  // 왼쪽 위 꼭짓점부터 시계 방향으로
+  const cx = found.reduce((s, p) => s + p.x, 0) / 4;
+  const cy = found.reduce((s, p) => s + p.y, 0) / 4;
+  const around = [...found].sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+  const first = around.reduce((best, p, i) => (p.x + p.y < around[best].x + around[best].y ? i : best), 0);
+  const quad = [0, 1, 2, 3].map((i) => around[(first + i) % 4]);
+
+  const score = (q: readonly Point[]) => readQuad(image, q)?.rough ?? Infinity;
+  // 가장자리 한 줄이 모두 흰색이면 배경에 묻혀 윤곽에서 빠진다. 변마다 한 줄을 더 내보낸 경우도 견줘 본다.
+  let chosen = quad;
+  let chosenScore = score(quad);
+  for (let mask = 1; mask < 16; mask++) {
+    // 마주 보는 두 변을 함께 내보내면 다섯 줄이 되므로 그런 경우는 없다.
+    if ((mask & 5) === 5 || (mask & 10) === 10) continue;
+    // 변 e는 꼭짓점 e와 e+1을 잇는다. 그 변을 내보내려면 두 꼭짓점을 맞은편 변에서 멀어지게 옮긴다.
+    const q = quad.map((p) => ({ ...p }));
+    for (let e = 0; e < 4; e++) {
+      if (!(mask & (1 << e))) continue;
+      const a = e;
+      const b = (e + 1) % 4;
+      q[a] = stretch(q[(e + 3) % 4], q[a]);
+      q[b] = stretch(q[(e + 2) % 4], q[b]);
+    }
+    const sc = score(q) + EXTEND_MARGIN * [1, 2, 4, 8].filter((bit) => mask & bit).length;
+    if (sc < chosenScore) {
+      chosenScore = sc;
+      chosen = q;
     }
   }
-  return { colors: cells.map((b) => b.rgb), points: cells.map(({ x, y }) => ({ x, y })) };
+  quad.splice(0, 4, ...chosen);
+  refine(quad, [0, 1, 2, 3], size(quad) * 0.04, score);
+  const read = readQuad(image, quad);
+  if (!read || read.rough > MAX_ROUGH) return null;
+  return { colors: read.colors, points: read.points, outline: quad, rough: read.rough };
 }
 
-// ───────── 4. 꼭짓점 쪽에서 본 세 면 읽기 ─────────
+// ───────── 꼭짓점 쪽에서 본 세 면 읽기 ─────────
 
 export interface CornerFace {
   center: Point;
@@ -416,82 +218,120 @@ export interface CornerFace {
   /** a 방향 줄이 맞닿아 있는 이웃 면의 번호 (CornerReading.faces 안에서) */
   alongA: number;
   alongB: number;
+  /** 찾아낸 면의 네 꼭짓점: 세 면이 만나는 점부터 차례로 */
+  outline: Point[];
 }
 
 export interface CornerReading {
   faces: [CornerFace, CornerFace, CornerFace];
   /** 화면에서 faces[0] → [1] → [2]가 시계 방향인지 */
   clockwise: boolean;
+  /** 칸 안의 색이 고르지 않은 정도 (작을수록 잘 맞은 것) */
+  rough: number;
+}
+
+/**
+ * 육각형의 꼭짓점 여섯(0~5)과 가운데 점(6)으로 세 면의 사각형을 만든다.
+ * parity는 육각형의 어느 꼭짓점들이 가운데 점과 이어지는지(짝수 번째인지 홀수 번째인지)다.
+ * 면 k = (가운데, h[2k+parity], h[2k+parity+1], h[2k+parity+2])
+ */
+function cornerQuads(points: readonly Point[], parity: number): Point[][] {
+  return [0, 1, 2].map((k) => [
+    points[6],
+    points[(2 * k + parity) % 6],
+    points[(2 * k + parity + 1) % 6],
+    points[(2 * k + parity + 2) % 6],
+  ]);
 }
 
 /** 꼭짓점이 카메라를 보게 든 사진에서 세 면을 읽는다. 어느 꼭짓점이든, 어느 쪽으로 기울였든 된다. */
 export function readCorner(image: PixelSource): CornerReading | null {
-  const grids = findGrids(image).slice(0, 3);
-  if (grids.length < 3) return null;
-  const centers = grids.map((g) => g.cells[1][1]);
-  const middle = {
-    x: (centers[0].x + centers[1].x + centers[2].x) / 3,
-    y: (centers[0].y + centers[1].y + centers[2].y) / 3,
-  };
-  // 세 면은 서로 붙어 있어야 한다.
-  const spacing = grids.map((g) => (dist(g.cells[0][1], g.cells[2][1]) + dist(g.cells[1][0], g.cells[1][2])) / 4);
-  for (let k = 0; k < 3; k++) {
-    const other = (k + 1) % 3;
-    if (dist(centers[k], centers[other]) > 4.2 * Math.max(spacing[k], spacing[other])) return null;
-  }
+  const hexagon = findOutline(image, 6);
+  if (!hexagon) return null;
+  const extent = size(hexagon);
 
-  const nearestFace = (p: Point, self: number): number => {
-    let best = -1;
-    let bestD = Infinity;
-    grids.forEach((g, k) => {
-      if (k === self) return;
-      for (const cell of g.cells.flat()) {
-        const d = dist(cell, p);
-        if (d < bestD) {
-          bestD = d;
-          best = k;
+  // 가운데 점의 자리와, 어느 꼭짓점들이 가운데와 이어지는지를 함께 찾는다.
+  let best: { points: Point[]; parity: number; rough: number } | null = null;
+  for (const parity of [0, 1]) {
+    // 원근이 없다면 가운데 점은 이웃한 꼭짓점들로 정해진다: 면이 평행사변형이므로 c = p + r - q
+    let cx = 0;
+    let cy = 0;
+    for (let k = 0; k < 3; k++) {
+      const p = hexagon[(2 * k + parity) % 6];
+      const q = hexagon[(2 * k + parity + 1) % 6];
+      const r = hexagon[(2 * k + parity + 2) % 6];
+      cx += (p.x + r.x - q.x) / 3;
+      cy += (p.y + r.y - q.y) / 3;
+    }
+    const roughOf = (points: readonly Point[]) => {
+      let total = 0;
+      for (const quad of cornerQuads(points, parity)) {
+        const read = readQuad(image, quad);
+        if (!read) return Infinity;
+        total += read.rough;
+      }
+      return total / 3;
+    };
+    // 원근 때문에 실제 자리는 조금 다르다. 둘레를 훑어 가장 잘 맞는 자리를 고른다.
+    const step = extent * 0.03;
+    const search = (outline: readonly Point[]) => {
+      let at: Point = { x: cx, y: cy };
+      let value = Infinity;
+      for (let dy = -5; dy <= 5; dy++) {
+        for (let dx = -5; dx <= 5; dx++) {
+          const c = { x: cx + dx * step, y: cy + dy * step };
+          const r = roughOf([...outline, c]);
+          if (r < value) {
+            value = r;
+            at = c;
+          }
         }
       }
-    });
-    return best;
-  };
+      return { at, value };
+    };
+    let outline = hexagon.map((p) => ({ ...p }));
+    let { at: start, value: startRough } = search(outline);
+    // 면의 가장자리 한 줄이 모두 흰색이면 배경에 묻혀, 그 면의 바깥 꼭짓점이 한 줄만큼 안으로 들어와 있다.
+    // 면마다 바깥 꼭짓점을 두 방향으로 한 줄씩 내보낸 경우를 견줘 보고, 확실히 더 잘 맞을 때만 받아들인다.
+    for (let k = 0; k < 3; k++) {
+      const pi = (2 * k + parity) % 6;
+      const qi = (2 * k + parity + 1) % 6;
+      const ri = (2 * k + parity + 2) % 6;
+      for (const from of [pi, ri]) {
+        const trial = outline.map((p) => ({ ...p }));
+        trial[qi] = stretch(outline[from], outline[qi]);
+        const r = roughOf([...trial, start]);
+        if (r + EXTEND_MARGIN < startRough) {
+          startRough = r;
+          outline = trial;
+        }
+      }
+    }
+    // 윤곽의 꼭짓점도 조금 움직여 가며 다듬는다.
+    const points = [...outline, start];
+    const rough = refine(points, [6, 0, 1, 2, 3, 4, 5], extent * 0.035, roughOf);
+    if (!best || rough < best.rough) best = { points, parity, rough };
+  }
+  if (!best || best.rough > MAX_ROUGH) return null;
 
+  const quads = cornerQuads(best.points, best.parity);
   const faces: CornerFace[] = [];
   for (let k = 0; k < 3; k++) {
-    const c = grids[k].cells;
-    // 세 면이 만나는 꼭짓점의 칸 = 네 모서리 칸 중 세 면의 한가운데에 가장 가까운 것
-    let vi = 0;
-    let vj = 0;
-    let bestD = Infinity;
-    for (const i of [0, 2]) {
-      for (const j of [0, 2]) {
-        const d = dist(c[i][j], middle);
-        if (d < bestD) {
-          bestD = d;
-          vi = i;
-          vj = j;
-        }
-      }
-    }
-    // i 방향으로 늘어선 줄(j = vj)과 j 방향으로 늘어선 줄(i = vi)이 각각 어느 이웃 면과 맞닿아 있는지
-    const alongA = nearestFace(c[1][vj], k);
-    const alongB = nearestFace(c[vi][1], k);
-    if (alongA === alongB) return null;
-    const colors: RGB[][] = [];
-    const points: Point[][] = [];
+    const read = readQuad(image, quads[k]);
+    if (!read) return null;
+    // readQuad는 [줄 j][열 i] 순서로 돌려준다. 사각형의 (0,0)은 가운데 점, u는 앞 면과 맞닿은 모서리 쪽이다.
+    const colors: RGB[][] = [[], [], []];
+    const points: Point[][] = [[], [], []];
     for (let a = 0; a < 3; a++) {
-      colors.push([]);
-      points.push([]);
       for (let b = 0; b < 3; b++) {
-        const cell = c[vi === 0 ? a : 2 - a][vj === 0 ? b : 2 - b];
-        colors[a].push(cell.rgb);
-        points[a].push({ x: cell.x, y: cell.y });
+        colors[a].push(read.colors[b * 3 + a]);
+        points[a].push(read.points[b * 3 + a]);
       }
     }
-    faces.push({ center: { x: centers[k].x, y: centers[k].y }, colors, points, alongA, alongB });
+    // u 방향 모서리(가운데 → 첫 꼭짓점)는 앞 면과, v 방향 모서리(가운데 → 셋째 꼭짓점)는 다음 면과 맞닿아 있다.
+    faces.push({ center: read.points[4], colors, points, alongA: (k + 2) % 3, alongB: (k + 1) % 3, outline: quads[k] });
   }
-
-  const cross =
-    (centers[1].x - centers[0].x) * (centers[2].y - centers[0].y) - (centers[1].y - centers[0].y) * (centers[2].x - centers[0].x);
-  return { faces: faces as [CornerFace, CornerFace, CornerFace], clockwise: cross > 0 };
+  const [c0, c1, c2] = faces.map((f) => f.center);
+  const cross = (c1.x - c0.x) * (c2.y - c0.y) - (c1.y - c0.y) * (c2.x - c0.x);
+  return { faces: faces as [CornerFace, CornerFace, CornerFace], clockwise: cross > 0, rough: best.rough };
 }

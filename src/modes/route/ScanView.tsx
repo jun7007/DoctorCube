@@ -10,6 +10,7 @@ import { assembleCorners, centerColors } from '../../scanner/assemble';
 import { rankCameras, type CameraInfo } from '../../scanner/camera';
 import { classifyFaces, guessColor } from '../../scanner/classify';
 import { DETECT_WIDTH, readCorner, readFace, type CornerReading, type FaceReading, type Point } from '../../scanner/detect';
+import { findCubeBox } from '../../scanner/outline';
 import type { RGB } from '../../scanner/sample';
 
 const COLOR_NAMES = ['흰색', '빨간색', '초록색', '노란색', '주황색', '파란색'] as const;
@@ -82,6 +83,8 @@ export function ScanView({ onDone, onCancel }: Props) {
   const video = useRef<HTMLVideoElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement | null>(null);
+  /** 큐브가 있는 부분만 크게 잘라 보는 데 쓰는 그림판 */
+  const zoom = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<CameraStatus>('starting');
   const [mode, setMode] = useState<Mode>(loadMode);
   const [stepIndex, setStepIndex] = useState(0);
@@ -183,7 +186,11 @@ export function ScanView({ onDone, onCancel }: Props) {
     }
   };
 
-  /** 지금 카메라 화면에서 큐브를 찾는다. */
+  /**
+   * 지금 카메라 화면에서 큐브를 찾는다. 두 단계로 본다:
+   * 먼저 줄인 그림에서 큐브가 어디 있는지 찾고, 그 부분만 영상에서 크게 잘라 칸을 읽는다.
+   * 그래서 큐브가 멀리 있어 작게 보여도 가까이 있을 때와 비슷한 크기로 읽게 된다.
+   */
   const look = useCallback((): Seen | null => {
     const el = video.current;
     const container = box.current;
@@ -198,20 +205,61 @@ export function ScanView({ onDone, onCancel }: Props) {
     const ctx = canvas.current.getContext('2d', { willReadFrequently: true });
     if (!ctx) return null;
     ctx.drawImage(el, 0, 0, width, height);
-    const image = ctx.getImageData(0, 0, width, height);
-    return {
-      corner: mode === 'corners' ? readCorner(image) : null,
-      face: mode === 'faces' ? readFace(image) : null,
+    const whole = ctx.getImageData(0, 0, width, height);
+    const seen: Seen = {
+      corner: null,
+      face: null,
       image: { width, height },
       box: { width: container.clientWidth, height: container.clientHeight },
     };
+    const where = findCubeBox(whole);
+    if (!where) return seen;
+
+    // 큐브가 있는 부분을 정사각형으로 잘라 크게 본다.
+    zoom.current ??= Object.assign(document.createElement('canvas'), { width: DETECT_WIDTH, height: DETECT_WIDTH });
+    const zctx = zoom.current.getContext('2d', { willReadFrequently: true });
+    if (!zctx) return seen;
+    const k = el.videoWidth / width;
+    zctx.fillStyle = '#808080';
+    zctx.fillRect(0, 0, DETECT_WIDTH, DETECT_WIDTH);
+    zctx.drawImage(el, where.x * k, where.y * k, where.width * k, where.height * k, 0, 0, DETECT_WIDTH, DETECT_WIDTH);
+    const close = zctx.getImageData(0, 0, DETECT_WIDTH, DETECT_WIDTH);
+    // 잘라 본 그림의 좌표를 전체 그림의 좌표로 되돌린다.
+    const back = (pt: Point): Point => ({
+      x: where.x + (pt.x * where.width) / DETECT_WIDTH,
+      y: where.y + (pt.y * where.height) / DETECT_WIDTH,
+    });
+    if (mode === 'corners') {
+      const r = readCorner(close);
+      if (r) {
+        seen.corner = {
+          ...r,
+          faces: r.faces.map((f) => ({
+            ...f,
+            center: back(f.center),
+            points: f.points.map((row) => row.map(back)),
+            outline: f.outline.map(back),
+          })) as CornerReading['faces'],
+        };
+      }
+    } else {
+      const r = readFace(close);
+      if (r) seen.face = { ...r, points: r.points.map(back), outline: r.outline.map(back) };
+    }
+    return seen;
   }, [mode]);
 
   // 실시간으로 찾아서 화면에 표시한다.
   useEffect(() => {
     if (status !== 'live') return;
-    const id = setInterval(() => setSeen(look()), 250);
-    return () => clearInterval(id);
+    // 한 번 찾는 데 걸리는 시간이 기기마다 다르므로, 끝난 뒤에 조금 쉬고 다시 찾는다.
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      setSeen(look());
+      timer = setTimeout(tick, 150);
+    };
+    timer = setTimeout(tick, 100);
+    return () => clearTimeout(timer);
   }, [status, look]);
 
   const restart = (next: Mode) => {
@@ -278,6 +326,8 @@ export function ScanView({ onDone, onCancel }: Props) {
     seen.face.points.forEach((at, i) => dots.push({ at, color: guessColor(seen.face!.colors[i]) }));
   }
   const found = dots.length > 0;
+  /** 찾아낸 면의 윤곽 (면마다 네 꼭짓점) */
+  const outlines: Point[][] = seen?.corner ? seen.corner.faces.map((f) => f.outline) : seen?.face ? [seen.face.outline] : [];
 
   // 영상은 잘리지 않게 전체가 보이도록(contain) 가운데 맞춰 보이므로, 그림 좌표를 그에 맞춰 옮긴다.
   const place = (p: Point): Point => {
@@ -315,9 +365,12 @@ export function ScanView({ onDone, onCancel }: Props) {
         <video ref={video} className="scan__video" playsInline muted />
         {status === 'live' && seen && (
           <svg className="scan__overlay" viewBox={`0 0 ${seen.box.width} ${seen.box.height}`} aria-hidden="true">
+            {outlines.map((quad, i) => (
+              <polygon key={`o${i}`} className="scan__outline" points={quad.map((q) => `${place(q).x},${place(q).y}`).join(' ')} />
+            ))}
             {dots.map((dot, i) => {
               const p = place(dot.at);
-              return <circle key={i} cx={p.x} cy={p.y} r={7} className="scan__dot" fill={STICKER_COLORS[dot.color]} />;
+              return <circle key={i} cx={p.x} cy={p.y} r={6} className="scan__dot" fill={STICKER_COLORS[dot.color]} />;
             })}
           </svg>
         )}
@@ -367,7 +420,7 @@ export function ScanView({ onDone, onCancel }: Props) {
             </p>
           ))}
           <p className="lesson__body">
-            안내선에 맞출 필요는 없어요. 칸마다 점이 찍히면 큐브를 찾은 거예요. 점의 색이 실제 색과 같아 보이면 "찍기"를 눌러요.
+            안내선에 맞출 필요는 없어요. 큐브를 찾으면 면의 테두리에 선이 그려지고 칸마다 점이 찍혀요. 선이 큐브에 맞고 점의 색이 실제 색과 같아 보이면 "찍기"를 눌러요.
           </p>
           {(problem ?? warning) && (
             <p className="scan__warn" role="status">
