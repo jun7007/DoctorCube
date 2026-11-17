@@ -1,21 +1,23 @@
 import { useState } from 'react';
 import { FreeMode } from './modes/free/FreeMode';
 import { FreeSession } from './modes/free/session';
-import { LearnMode } from './modes/learn/LearnMode';
+import { LearnMode, type LearnRoute } from './modes/learn/LearnMode';
+import { INITIAL_ROUTE_SESSION, RouteMode, type RouteSession } from './modes/route/RouteMode';
 
-type Mode = 'learn' | 'free' | 'scan';
+type Mode = 'learn' | 'free' | 'route';
 
 const MODES: { id: Mode; label: string }[] = [
   { id: 'learn', label: '학습' },
   { id: 'free', label: '자유' },
-  { id: 'scan', label: '스캔' },
+  { id: 'route', label: '경로' },
 ];
 
 export function App() {
   const [mode, setMode] = useState<Mode>('learn');
-  // 탭을 오가도 풀던 큐브와 보던 레슨이 유지되도록 여기서 보관한다.
+  // 탭을 오가도 하던 일이 유지되도록 각 탭의 상태를 여기서 보관한다.
   const [freeSession] = useState(() => new FreeSession());
-  const [lessonId, setLessonId] = useState<string | null>(null);
+  const [learnRoute, setLearnRoute] = useState<LearnRoute>({ view: 'home' });
+  const [routeSession, setRouteSession] = useState<RouteSession>(INITIAL_ROUTE_SESSION);
 
   return (
     <div className="app">
@@ -36,17 +38,14 @@ export function App() {
         </nav>
       </header>
       <main className="main">
-        {mode === 'learn' && <LearnMode lessonId={lessonId} onOpen={setLessonId} />}
+        {mode === 'learn' && <LearnMode route={learnRoute} onRoute={setLearnRoute} />}
         {mode === 'free' && <FreeMode session={freeSession} />}
-        {mode === 'scan' && (
-          <div className="coming">
-            <h2>스캔과 경로 비교는 준비 중이에요</h2>
-            <ul>
-              <li>카메라로 실제 큐브 6면 찍기</li>
-              <li>공식별 풀이 수와 예상 시간 비교</li>
-              <li>고른 경로를 3D로 한 단계씩 따라 하기</li>
-            </ul>
-          </div>
+        {mode === 'route' && (
+          <RouteMode
+            session={routeSession}
+            onSession={setRouteSession}
+            getFreeCube={() => freeSession.getSnapshot().cube}
+          />
         )}
       </main>
     </div>

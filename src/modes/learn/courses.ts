@@ -1,8 +1,14 @@
 /**
  * 학습 내용. 글과 예시 상태만 담고, 화면에 보여 줄 큐브와 동작은 resolve.ts가 만든다.
  */
+import { F2L_CASES } from '../../algorithms/f2l';
+import { OLL_CASES } from '../../algorithms/oll';
+import { PLL_CASES } from '../../algorithms/pll';
+import { TWO_LOOK_OLL_EDGES, TWO_LOOK_PLL_CORNERS, TWO_LOOK_PLL_EDGES } from '../../algorithms/twoLook';
+import type { AlgCase } from '../../algorithms/types';
 import { algToString, invertAlg, parseAlg } from '../../core/notation';
 import { ALG, type StageId } from '../../solvers/beginner';
+import type { CfopStageId } from '../../solvers/cfop';
 
 export interface LessonStep {
   title: string;
@@ -14,8 +20,10 @@ export interface LessonStep {
   focus?: string;
   /** 보여 줄 동작을 직접 적는다 */
   alg?: string;
-  /** 보여 줄 동작을 초보자 공식 풀이기에서 가져온다 ('all'은 처음부터 끝까지) */
-  auto?: StageId | 'all';
+  /** 보여 줄 동작을 풀이기에서 가져온다: 그 풀이 방법의 단계 이름, 'all'은 처음부터 끝까지 */
+  auto?: StageId | CfopStageId | 'all';
+  /** auto에 쓸 풀이 방법 (기본은 초보자 공식) */
+  method?: 'beginner' | 'cfop';
   /** auto와 함께: 매번 무작위로 섞은 큐브로 연습한다 */
   random?: boolean;
   /** 재생 버튼 없이 직접 돌려야 넘어간다 */
@@ -572,4 +580,188 @@ const beginner: Course = {
   ],
 };
 
-export const COURSES: readonly Course[] = [notation, beginner];
+/** 공식 모음의 케이스 하나를 그대로 레슨 단계로 만든다. */
+const caseStep = (c: AlgCase, title: string, body: string[], focus?: string): LessonStep => ({
+  title,
+  body: [...body, `공식: ${c.alg}`],
+  setup: inv(c.alg),
+  alg: c.alg,
+  focus,
+});
+
+const F2L_FOCUS = 'U R F D L B UF UR UB UL UFR UFL UBR UBL FR FL BR BL';
+const oll = (id: string) => OLL_CASES.find((c) => c.id === id)!;
+const pll = (id: string) => PLL_CASES.find((c) => c.id === id)!;
+
+const cfop: Course = {
+  id: 'cfop',
+  title: 'CFOP: 빠르게 푸는 공식',
+  summary: '십자 → F2L → OLL → PLL. 스피드큐빙에서 가장 널리 쓰는 방법',
+  frame: 'yellow',
+  lessons: [
+    {
+      id: 'cfop-intro',
+      title: 'CFOP란?',
+      summary: '네 단계와 배우는 순서',
+      steps: [
+        {
+          title: '네 단계',
+          body: [
+            'CFOP는 네 단계의 머리글자예요. Cross(십자), F2L(1·2층), OLL(윗면을 노랗게), PLL(윗층 자리 맞추기).',
+            '초보자 공식과 순서는 비슷하지만 여러 단계를 하나로 합쳐요. 초보자 공식이 160회전쯤 걸린다면 CFOP는 60회전 안팎이에요.',
+          ],
+        },
+        {
+          title: '배우는 순서',
+          body: [
+            '공식이 많아서(F2L 41개, OLL 57개, PLL 21개) 한꺼번에 외우지 않아요.',
+            '추천 순서: ① 십자를 아래에 바로 만들기 ② F2L 기본 넣기 ③ 2-Look OLL (공식 10개) ④ 2-Look PLL (공식 6개) ⑤ 나머지 공식.',
+            '2-Look은 OLL과 PLL을 각각 두 번에 나눠 하는 방법이에요. 조금 느리지만 공식 16개면 CFOP로 끝까지 풀 수 있어요.',
+          ],
+        },
+        {
+          title: '전체 풀이 미리 보기',
+          body: [
+            '무작위로 섞은 큐브를 CFOP(2-Look)로 푸는 모습이에요. 재생 버튼으로 지켜보세요.',
+            '지금은 흐름만 보면 돼요. 각 단계는 다음 레슨에서 하나씩 배워요.',
+          ],
+          auto: 'all',
+          method: 'cfop',
+          random: true,
+        },
+      ],
+    },
+    {
+      id: 'cfop-cross',
+      title: '1. 십자: 데이지 없이 바로',
+      summary: '8수 안에 흰색 십자 만들기',
+      steps: [
+        {
+          title: '아래에 바로 만들기',
+          body: [
+            '초보자 공식에서는 데이지를 거쳐 십자를 만들었어요. CFOP에서는 흰색 엣지를 아래 면의 제자리로 바로 보내요.',
+            '어떤 상태에서든 8수 안에 만들 수 있고, 평균은 6수쯤이에요.',
+            '외우는 공식이 아니라 연습으로 익히는 단계예요. 엣지 하나를 넣을 때 이미 넣은 엣지를 건드리지 않는 길을 찾는 게 요령이에요.',
+          ],
+          focus: 'U R F D L B UF UR UB UL',
+        },
+        {
+          title: '가장 짧은 십자 따라 하기',
+          body: [
+            '섞인 큐브에서 가장 짧은 십자 풀이를 보여 줘요. 한 수씩 넘기면서 각 엣지가 어디로 가는지 눈으로 따라가 보세요.',
+            '"새 예제"로 여러 번 보면 감이 생겨요.',
+          ],
+          auto: 'cross',
+          method: 'cfop',
+          random: true,
+        },
+      ],
+    },
+    {
+      id: 'cfop-f2l',
+      title: '2. F2L: 짝지어 넣기',
+      summary: '코너와 엣지를 한 번에',
+      steps: [
+        {
+          title: '코너와 엣지를 짝으로',
+          body: [
+            '초보자 공식은 흰색 코너 4개를 넣고, 그다음 2층 엣지 4개를 넣었어요. 모두 8번이에요.',
+            'F2L은 흰색 코너와 그 옆 엣지를 윗층에서 짝지은 다음 함께 넣어요. 4번이면 1·2층이 끝나요.',
+            '경우의 수는 41가지지만, 대부분은 기본 넣기 모양으로 만든 뒤 넣는 것이라 원리를 알면 외울 것이 줄어요.',
+          ],
+          focus: F2L_FOCUS,
+        },
+        ...F2L_CASES.slice(0, 4).map((c, i) =>
+          caseStep(c, `기본 넣기 ${i + 1}`, [c.note ?? '가장 기본이 되는 넣기 모양이에요.'], F2L_FOCUS),
+        ),
+        {
+          title: '직접 해 보기',
+          body: [
+            '십자가 된 큐브에서 짝 4개를 넣어 보세요. 어떤 공식을 쓰는지 이름이 함께 나와요.',
+            '41가지 공식은 학습 목록의 "공식 모음 > F2L"에서 하나씩 볼 수 있어요.',
+          ],
+          auto: 'f2l',
+          method: 'cfop',
+          random: true,
+        },
+      ],
+    },
+    {
+      id: 'cfop-2look-oll',
+      title: '3. 2-Look OLL',
+      summary: '공식 10개로 윗면을 노랗게',
+      steps: [
+        {
+          title: '두 번에 나눠서',
+          body: [
+            'OLL은 윗면 전체를 노랗게 만드는 단계예요. 한 번에 하려면 57가지를 외워야 해요.',
+            '2-Look OLL은 먼저 노란 십자를 만들고(공식 3개), 그다음 코너를 맞춰요(공식 7개).',
+          ],
+        },
+        ...TWO_LOOK_OLL_EDGES.map((c) =>
+          caseStep(c, `노란 십자 만들기: ${c.name}`, [c.note ?? '윗면의 노란 엣지 모양을 보고 고르는 공식이에요.']),
+        ),
+        caseStep(oll('oll-27'), `코너 맞추기: ${oll('oll-27').name}`, [
+          '노란 십자가 된 뒤에는 코너 모양이 7가지뿐이에요. 그중 가장 자주 쓰는 공식이에요.',
+        ]),
+        caseStep(oll('oll-26'), `코너 맞추기: ${oll('oll-26').name}`, ['바로 앞 공식을 거울에 비춘 모양이에요.']),
+        {
+          title: '직접 해 보기',
+          body: [
+            '1·2층이 끝난 큐브에서 윗면을 노랗게 만들어 보세요.',
+            '코너 7가지는 학습 목록의 "공식 모음 > 2-Look OLL"에서 모두 볼 수 있어요.',
+          ],
+          auto: 'oll',
+          method: 'cfop',
+          random: true,
+        },
+      ],
+    },
+    {
+      id: 'cfop-2look-pll',
+      title: '4. 2-Look PLL',
+      summary: '공식 6개로 마무리',
+      steps: [
+        {
+          title: '두 번에 나눠서',
+          body: [
+            'PLL은 노랗게 된 윗층 조각들의 자리를 맞추는 마지막 단계예요. 한 번에 하려면 21가지를 외워야 해요.',
+            '2-Look PLL은 먼저 코너 4개의 자리를 맞추고(공식 2개), 그다음 엣지를 맞춰요(공식 4개).',
+          ],
+        },
+        ...TWO_LOOK_PLL_CORNERS.map((id) =>
+          caseStep(pll(id), `코너 자리 맞추기: ${pll(id).name}`, [pll(id).note ?? '코너의 옆면 색을 보고 고르는 공식이에요.']),
+        ),
+        ...TWO_LOOK_PLL_EDGES.map((id) =>
+          caseStep(pll(id), `엣지 자리 맞추기: ${pll(id).name}`, [pll(id).note ?? '엣지의 옆면 색을 보고 고르는 공식이에요.']),
+        ),
+        {
+          title: '직접 해 보기',
+          body: ['윗면이 노랗게 된 큐브를 완성해 보세요.'],
+          auto: 'pll',
+          method: 'cfop',
+          random: true,
+        },
+      ],
+    },
+    {
+      id: 'cfop-full',
+      title: '처음부터 끝까지 (CFOP)',
+      summary: '섞인 큐브를 2-Look CFOP로 풀어 보기',
+      steps: [
+        {
+          title: '전체 풀이 따라 하기',
+          body: [
+            '무작위로 섞은 큐브를 CFOP(2-Look)로 처음부터 끝까지 풀어요. 지금 어느 단계인지와 어떤 공식을 쓰는지가 아래에 나와요.',
+            '"새 예제"를 누르면 다른 큐브로 바뀌어요.',
+          ],
+          auto: 'all',
+          method: 'cfop',
+          random: true,
+        },
+      ],
+    },
+  ],
+};
+
+export const COURSES: readonly Course[] = [notation, beginner, cfop];

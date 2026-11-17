@@ -1,70 +1,126 @@
 import { useMemo, useRef, useState } from 'react';
+import { ALG_SETS } from '../../algorithms';
 import type { Move } from '../../core/cube';
 import { CubeCanvas, type CubeCanvasHandle } from '../../ui/CubeCanvas';
 import { SPEEDS, useSpeed } from '../../ui/speed';
+import { AlgSetView, CaseDrill, CaseStudy } from './AlgViews';
+import { useCaseStats } from './caseStore';
 import { COURSES, type Course, type Lesson } from './courses';
 import { useProgress } from './progress';
 import { resolveStep } from './resolve';
 import { StepPlayer } from './StepPlayer';
 
+/** 학습 탭 안에서 지금 보고 있는 화면 */
+export type LearnRoute =
+  | { view: 'home' }
+  | { view: 'lesson'; lessonId: string }
+  | { view: 'set'; setId: string }
+  | { view: 'case'; setId: string; caseId: string }
+  | { view: 'drill'; setId: string };
+
 const ALL_LESSONS = COURSES.flatMap((course) => course.lessons.map((lesson) => ({ course, lesson })));
 
 interface Props {
-  /** 보고 있는 레슨 (없으면 목록) */
-  lessonId: string | null;
-  onOpen: (lessonId: string | null) => void;
+  route: LearnRoute;
+  onRoute: (route: LearnRoute) => void;
 }
 
-export function LearnMode({ lessonId, onOpen }: Props) {
+export function LearnMode({ route, onRoute }: Props) {
   const { done, markDone } = useProgress();
-  const index = ALL_LESSONS.findIndex((x) => x.lesson.id === lessonId);
+  const home = () => onRoute({ view: 'home' });
 
-  if (index < 0) {
-    return (
-      <div className="learn-home">
-        {COURSES.map((course) => (
-          <section key={course.id} className="course">
-            <h2>{course.title}</h2>
-            <p className="muted">{course.summary}</p>
-            <ol className="course__lessons">
-              {course.lessons.map((lesson) => (
-                <li key={lesson.id}>
-                  <button className="lesson-card" onClick={() => onOpen(lesson.id)}>
-                    <span className={`lesson-card__mark${done.has(lesson.id) ? ' lesson-card__mark--done' : ''}`}>
-                      {done.has(lesson.id) ? '✓' : ''}
-                    </span>
-                    <span className="lesson-card__text">
-                      <b>{lesson.title}</b>
-                      <span className="muted">{lesson.summary}</span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ol>
-          </section>
-        ))}
-        <section className="course">
-          <h2>CFOP</h2>
-          <p className="muted">가장 널리 쓰이는 빠른 공식. 준비 중이에요.</p>
-        </section>
-      </div>
-    );
+  if (route.view === 'lesson') {
+    const index = ALL_LESSONS.findIndex((x) => x.lesson.id === route.lessonId);
+    if (index >= 0) {
+      const { course, lesson } = ALL_LESSONS[index];
+      const next = ALL_LESSONS[index + 1]?.lesson.id ?? null;
+      return (
+        <LessonView
+          key={lesson.id}
+          course={course}
+          lesson={lesson}
+          onExit={home}
+          onFinish={() => {
+            markDone(lesson.id);
+            onRoute(next ? { view: 'lesson', lessonId: next } : { view: 'home' });
+          }}
+          hasNext={next !== null}
+        />
+      );
+    }
   }
 
-  const { course, lesson } = ALL_LESSONS[index];
-  const next = ALL_LESSONS[index + 1]?.lesson.id ?? null;
+  if (route.view === 'set' || route.view === 'case' || route.view === 'drill') {
+    const set = ALG_SETS.find((s) => s.id === route.setId);
+    if (set) {
+      const toSet = () => onRoute({ view: 'set', setId: set.id });
+      const toCase = (caseId: string) => onRoute({ view: 'case', setId: set.id, caseId });
+      if (route.view === 'drill') return <CaseDrill key={set.id} set={set} onBack={toSet} />;
+      const algCase = route.view === 'case' ? set.cases.find((c) => c.id === route.caseId) : undefined;
+      if (algCase) return <CaseStudy set={set} algCase={algCase} onBack={toSet} onOpenCase={toCase} />;
+      return (
+        <AlgSetView
+          set={set}
+          onBack={home}
+          onOpenCase={toCase}
+          onDrill={() => onRoute({ view: 'drill', setId: set.id })}
+        />
+      );
+    }
+  }
+
+  return <LearnHome done={done} onRoute={onRoute} />;
+}
+
+function LearnHome({ done, onRoute }: { done: ReadonlySet<string>; onRoute: (route: LearnRoute) => void }) {
+  const { stats } = useCaseStats();
   return (
-    <LessonView
-      key={lesson.id}
-      course={course}
-      lesson={lesson}
-      onExit={() => onOpen(null)}
-      onFinish={() => {
-        markDone(lesson.id);
-        onOpen(next);
-      }}
-      hasNext={next !== null}
-    />
+    <div className="learn-home">
+      {COURSES.map((course) => (
+        <section key={course.id} className="course">
+          <h2>{course.title}</h2>
+          <p className="muted">{course.summary}</p>
+          <ol className="course__lessons">
+            {course.lessons.map((lesson) => (
+              <li key={lesson.id}>
+                <button className="lesson-card" onClick={() => onRoute({ view: 'lesson', lessonId: lesson.id })}>
+                  <span className={`lesson-card__mark${done.has(lesson.id) ? ' lesson-card__mark--done' : ''}`}>
+                    {done.has(lesson.id) ? '✓' : ''}
+                  </span>
+                  <span className="lesson-card__text">
+                    <b>{lesson.title}</b>
+                    <span className="muted">{lesson.summary}</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ))}
+
+      <section className="course">
+        <h2>공식 모음</h2>
+        <p className="muted">공식을 하나씩 보고, 가린 채로 연습해요.</p>
+        <ol className="course__lessons">
+          {ALG_SETS.map((set) => {
+            const known = set.cases.filter((c) => stats[c.id]?.known).length;
+            return (
+              <li key={set.id}>
+                <button className="lesson-card" onClick={() => onRoute({ view: 'set', setId: set.id })}>
+                  <span className="lesson-card__count">
+                    {known}/{set.cases.length}
+                  </span>
+                  <span className="lesson-card__text">
+                    <b>{set.title}</b>
+                    <span className="muted">{set.summary}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
+    </div>
   );
 }
 

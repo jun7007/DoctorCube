@@ -759,3 +759,380 @@ kbd {
     padding: 10px 16px 14px;
   }
 }
+
+/* ───────── 공식 모음 ───────── */
+
+.lesson-card__count {
+  flex: none;
+  min-width: 44px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.algset {
+  height: 100%;
+  overflow-y: auto;
+  padding: 12px 16px 32px;
+}
+
+.algset > * {
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.algset__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.algset h2 {
+  margin-top: 4px;
+  font-size: 20px;
+}
+
+.algset__drill {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.algset__group {
+  margin-top: 22px;
+}
+
+.algset__group h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.algset__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+}
+
+.case-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.case-card:active {
+  background: var(--surface-2);
+}
+
+.case-card__name {
+  font-size: 12.5px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.25;
+}
+
+.case-card__known {
+  margin-right: 3px;
+  color: var(--good);
+}
+
+.case__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.case__alts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.case__alts h3 {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.case__alts code {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--bg);
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 13.5px;
+  overflow-wrap: anywhere;
+}
+
+.case__known {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.case__known input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--good);
+}
+
+.lesson__nav--even {
+  grid-template-columns: 1fr 1fr;
+}
+
+.drill__result {
+  font-weight: 700;
+  color: var(--warn);
+}
+
+.drill__result--ok {
+  color: var(--good);
+}
+
+/* ───────── 경로 탭 ───────── */
+
+.net {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.net__grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-rows: repeat(9, auto);
+  gap: 2px;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.net__cell {
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid rgb(0 0 0 / 55%);
+  border-radius: 4px;
+}
+
+.net__cell--center {
+  cursor: default;
+  box-shadow: inset 0 0 0 2px rgb(0 0 0 / 35%);
+}
+
+.net__label {
+  align-self: center;
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.net__palette {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.net__swatch {
+  min-height: 44px;
+  border: 3px solid transparent;
+  border-radius: 12px;
+  color: #10121c;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.net__swatch[aria-checked='true'] {
+  border-color: var(--text);
+}
+
+/* 9칸이 아닌 색은 숫자를 눈에 띄게 */
+.net__swatch--off {
+  text-decoration: underline wavy;
+}
+
+.route__check {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--warn);
+}
+
+.route__check--ok {
+  color: var(--good);
+}
+
+.route__notice {
+  font-size: 13px;
+}
+
+.route__sources {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.route__sources .btn {
+  font-size: 13px;
+  padding: 0 4px;
+}
+
+.route__alg {
+  display: flex;
+  gap: 6px;
+}
+
+.route__alg input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+
+.route__alg .btn {
+  padding: 0 16px;
+}
+
+.lesson__nav--single {
+  grid-template-columns: 1fr;
+}
+
+.route__top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.route__top h2 {
+  margin: 0;
+}
+
+.route__pace {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 13px;
+}
+
+.route__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  margin-bottom: 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.route-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.route-card--pending {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.route-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.route-card h3 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  font-size: 17px;
+}
+
+.route-card__turns {
+  flex: none;
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.route-card p {
+  font-size: 13.5px;
+}
+
+.route-card__stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.route-card__stage {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.route-card__stage b {
+  color: var(--text);
+}
+
+.route-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.route-card__meta span:first-child {
+  font-weight: 700;
+}
+
+.player__big {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 14px;
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 52px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.player__big span {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--muted);
+}

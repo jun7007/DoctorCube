@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyMoves, isSolved, toFaceletString } from '../../core/cube';
-import { STAGE_ORDER, solveBeginner } from '../../solvers/beginner';
 import { COURSES } from './courses';
-import { YELLOW_UP, resolveStep } from './resolve';
+import { METHODS, YELLOW_UP, resolveStep } from './resolve';
 
 const flat = (p: ReturnType<typeof resolveStep>) => p.groups.flatMap((g) => g.moves);
 
@@ -36,17 +35,18 @@ describe('학습 내용', () => {
           return;
         }
 
-        const index = STAGE_ORDER.indexOf(step.auto);
+        const method = METHODS[step.method ?? 'beginner'];
+        const index = method.order.indexOf(step.auto);
         const check = () => {
           const p = resolveStep(course, step);
           // 앞 단계는 이미 끝나 있고, 이 단계에 할 일이 있어야 한다.
           // (첫 단계 '큐브 잡기'는 빼고 본다. 풀이 도중 큐브를 돌려 잡으면 방향만 달라지기 때문.)
-          const before = solveBeginner(p.start);
+          const before = method.solve(p.start);
           expect(before.slice(1, index).every((s) => s.steps.length === 0), '앞 단계가 끝나 있어야 함').toBe(true);
           expect(flat(p).length, '이 단계에 할 일이 있어야 함').toBeGreaterThan(0);
           // 동작을 다 하면 이 단계까지 끝난다.
           const end = applyMoves(p.start, flat(p));
-          const after = solveBeginner(end);
+          const after = method.solve(end);
           expect(after.slice(1, index + 1).every((s) => s.steps.length === 0), '이 단계가 끝나야 함').toBe(true);
           return { p, end, before };
         };
