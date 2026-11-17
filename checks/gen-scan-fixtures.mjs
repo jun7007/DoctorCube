@@ -31,13 +31,11 @@ const shoot = (azimuth, elevation, fov) =>
   page.evaluate(
     ([az, el, f]) => {
       const v = window.__cubeView;
-      v.azimuth = az;
-      v.elevation = el;
       v.camera.fov = f;
       v.camera.updateProjectionMatrix();
       // 큐브가 화면에 넉넉히 들어오게
       v.distance = (2.9 / Math.sin(((f * Math.PI) / 180) / 2)) * (v.camera.aspect < 1 ? 1 / v.camera.aspect : 1);
-      v.updateCamera();
+      v.setAngles(az, el);
       v.renderer.render(v.scene, v.camera);
       return v.renderer.domElement.toDataURL('image/png');
     },

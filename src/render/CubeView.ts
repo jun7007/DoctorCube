@@ -17,12 +17,13 @@ import {
 const AXIS_NAME = ['x', 'y', 'z'] as const;
 const DEFAULT_AZIMUTH = 0.62;
 const DEFAULT_ELEVATION = 0.5;
-const MAX_ELEVATION = 1.45;
 const FOV = 32;
 /** 큐브를 감싸는 구의 반지름 (화면 맞춤용) */
 const FIT_RADIUS = 2.75;
 const SWIPE_THRESHOLD = 14;
 const ORBIT_SPEED = 0.008;
+const AXIS_X = new THREE.Vector3(1, 0, 0);
+const AXIS_Y = new THREE.Vector3(0, 1, 0);
 const HALF = 1.5;
 const DIM_COLOR = '#3b3f4f';
 /** 입력이 밀렸을 때 회전 한 번의 최소 시간(ms) */
@@ -85,8 +86,11 @@ export class CubeView {
   private queue: { move: Move; duration: number | null }[] = [];
   private anim: Animation | null = null;
   private duration = 220;
-  private azimuth = DEFAULT_AZIMUTH;
-  private elevation = DEFAULT_ELEVATION;
+  /**
+   * 보는 방향. 큐브 둘레를 도는 카메라의 자세를 회전 하나로 들고 있어서,
+   * 위아래로도 한계 없이 계속 돌릴 수 있다 (위도·경도로 들고 있으면 꼭대기에서 막힌다).
+   */
+  private readonly orbit = new THREE.Quaternion();
   private distance = 10;
   private width = 1;
   private height = 1;
@@ -128,6 +132,7 @@ export class CubeView {
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
+    this.setAngles(DEFAULT_AZIMUTH, DEFAULT_ELEVATION);
     this.resize();
     this.raf = requestAnimationFrame(this.tick);
   }
@@ -164,9 +169,7 @@ export class CubeView {
   }
 
   resetView(): void {
-    this.azimuth = DEFAULT_AZIMUTH;
-    this.elevation = DEFAULT_ELEVATION;
-    this.updateCamera();
+    this.setAngles(DEFAULT_AZIMUTH, DEFAULT_ELEVATION);
   }
 
   dispose(): void {
@@ -304,13 +307,17 @@ export class CubeView {
     this.renderer.render(this.scene, this.camera);
   }
 
+  /** 보는 방향을 방위각(옆으로 돈 각)과 올려다본 각으로 정한다. 위쪽이 화면 위가 되는 반듯한 자세가 된다. */
+  setAngles(azimuth: number, elevation: number): void {
+    this.orbit
+      .setFromAxisAngle(AXIS_Y, azimuth)
+      .multiply(new THREE.Quaternion().setFromAxisAngle(AXIS_X, -elevation));
+    this.updateCamera();
+  }
+
   private updateCamera(): void {
-    const ce = Math.cos(this.elevation);
-    this.camera.position.set(
-      this.distance * ce * Math.sin(this.azimuth),
-      this.distance * Math.sin(this.elevation),
-      this.distance * ce * Math.cos(this.azimuth),
-    );
+    this.camera.position.set(0, 0, this.distance).applyQuaternion(this.orbit);
+    this.camera.up.set(0, 1, 0).applyQuaternion(this.orbit);
     this.camera.lookAt(0, 0, 0);
     this.camera.updateMatrixWorld();
     this.dirty = true;
@@ -332,8 +339,11 @@ export class CubeView {
 
     if (!p.hit) {
       // 큐브 바깥에서 시작한 드래그: 시점 돌리기
-      this.azimuth -= dx * ORBIT_SPEED;
-      this.elevation = THREE.MathUtils.clamp(this.elevation + dy * ORBIT_SPEED, -MAX_ELEVATION, MAX_ELEVATION);
+      // 지금 화면 기준으로 돌린다: 옆으로 끌면 화면의 세로축, 위아래로 끌면 화면의 가로축 둘레로.
+      this.orbit
+        .multiply(new THREE.Quaternion().setFromAxisAngle(AXIS_Y, -dx * ORBIT_SPEED))
+        .multiply(new THREE.Quaternion().setFromAxisAngle(AXIS_X, -dy * ORBIT_SPEED))
+        .normalize();
       p.x = e.clientX;
       p.y = e.clientY;
       this.updateCamera();
