@@ -10,7 +10,9 @@ import { algToString, invertAlg, parseAlg } from '../../core/notation';
 import { ALG, type StageId } from '../../solvers/beginner';
 import type { CfopStageId } from '../../solvers/cfop';
 import type { RouxStageId } from '../../solvers/roux';
+import type { ZzStageId } from '../../solvers/zz';
 import { rouxCourse } from './rouxCourse';
+import { zzCourse } from './zzCourse';
 
 export interface LessonStep {
   title: string;
@@ -23,9 +25,9 @@ export interface LessonStep {
   /** 보여 줄 동작을 직접 적는다 */
   alg?: string;
   /** 보여 줄 동작을 풀이기에서 가져온다: 그 풀이 방법의 단계 이름, 'all'은 처음부터 끝까지 */
-  auto?: StageId | CfopStageId | RouxStageId | 'all';
+  auto?: StageId | CfopStageId | RouxStageId | ZzStageId | 'all';
   /** auto에 쓸 풀이 방법 (기본은 초보자 공식) */
-  method?: 'beginner' | 'cfop' | 'roux';
+  method?: 'beginner' | 'cfop' | 'roux' | 'zz';
   /** auto와 함께: 매번 무작위로 섞은 큐브로 연습한다 */
   random?: boolean;
   /** 재생 버튼 없이 직접 돌려야 넘어간다 */
@@ -766,4 +768,4 @@ const cfop: Course = {
   ],
 };
 
-export const COURSES: readonly Course[] = [notation, beginner, cfop, rouxCourse];
+export const COURSES: readonly Course[] = [notation, beginner, cfop, rouxCourse, zzCourse];

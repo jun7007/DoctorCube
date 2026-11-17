@@ -7,6 +7,7 @@ import { STAGE_ORDER, solveBeginner } from '../../solvers/beginner';
 import { CFOP_STAGE_ORDER, solveCfop } from '../../solvers/cfop';
 import { ROUX_STAGE_ORDER, solveRoux } from '../../solvers/roux';
 import { stageMoves, type SolveStage } from '../../solvers/types';
+import { ZZ_STAGE_ORDER, solveZz } from '../../solvers/zz';
 import type { Course, LessonStep } from './courses';
 
 export interface PlayGroup {
@@ -47,7 +48,7 @@ interface Method {
 }
 
 /** 레슨이 쓰는 풀이 방법 */
-export const METHODS: Readonly<Record<'beginner' | 'cfop' | 'roux', Method>> = {
+export const METHODS: Readonly<Record<'beginner' | 'cfop' | 'roux' | 'zz', Method>> = {
   beginner: {
     solve: solveBeginner,
     order: STAGE_ORDER,
@@ -73,6 +74,16 @@ export const METHODS: Readonly<Record<'beginner' | 'cfop' | 'roux', Method>> = {
       fb: ROUX_LEFT_BLOCK,
       sb: `${ROUX_LEFT_BLOCK} ${ROUX_RIGHT_BLOCK}`,
       cmll: `${ROUX_LEFT_BLOCK} ${ROUX_RIGHT_BLOCK} ${ROUX_TOP_CORNERS}`,
+    },
+  },
+  zz: {
+    solve: solveZz,
+    order: ZZ_STAGE_ORDER,
+    // 라인(아래 면의 앞·뒤 엣지)은 완성 상태 기준 UF, UB. 블록은 Roux의 블록에 아래 엣지가 이미 들어 있다.
+    focus: {
+      eoline: `${CENTERS} ${WHITE_EDGES} ${MIDDLE_EDGES} ${YELLOW_EDGES}`,
+      left: `${CENTERS} UF UB ${ROUX_LEFT_BLOCK}`,
+      right: `${CENTERS} UF UB ${ROUX_LEFT_BLOCK} ${ROUX_RIGHT_BLOCK}`,
     },
   },
 };
