@@ -54,7 +54,7 @@ export function NetEditor({ state, color, onColor, onPaint, unsure = [] }: Props
             );
           }),
         )}
-        <span className="net__label" style={{ gridColumn: '1 / span 3', gridRow: 2 }}>
+        <span className="net__label">
           위(흰색)가 맨 위,
           <br />
           초록색이 가운데

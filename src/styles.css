@@ -935,8 +935,12 @@ kbd {
   box-shadow: inset 0 0 0 2px rgb(0 0 0 / 35%);
 }
 
+/* 왼쪽 위 빈자리에 띄워 둔다. 격자 칸에 넣으면 그 줄만 높아져 전개도의 줄이 어긋난다. */
 .net__label {
-  align-self: center;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 24%;
   font-size: 10.5px;
   line-height: 1.3;
   color: var(--muted);
@@ -1185,6 +1189,20 @@ kbd {
 .scan__state--found {
   background: var(--good);
   color: #06281a;
+}
+
+.scan__switch {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgb(255 255 255 / 45%);
+  border-radius: 999px;
+  background: rgb(0 0 0 / 65%);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .scan__message {

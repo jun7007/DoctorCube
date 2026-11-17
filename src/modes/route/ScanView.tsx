@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { STICKER_COLORS } from '../../render/colors';
 import { assembleCorners, centerColors } from '../../scanner/assemble';
+import { rankCameras, type CameraInfo } from '../../scanner/camera';
 import { classifyFaces, guessColor } from '../../scanner/classify';
 import { DETECT_WIDTH, readCorner, readFace, type CornerReading, type FaceReading, type Point } from '../../scanner/detect';
 import type { RGB } from '../../scanner/sample';
@@ -36,6 +37,16 @@ const CORNER_HOW: readonly string[][] = [
 /** 이 값보다 확신이 낮은 칸은 "확실하지 않음"으로 표시한다 */
 const UNSURE_BELOW = 0.25;
 const MODE_KEY = 'doctorcube.scan-mode';
+const CAMERA_KEY = 'doctorcube.camera';
+
+/** 지난번에 직접 고른 카메라 (없으면 null) */
+function loadCamera(): string | null {
+  try {
+    return localStorage.getItem(CAMERA_KEY);
+  } catch {
+    return null;
+  }
+}
 
 function loadMode(): Mode {
   try {
@@ -81,6 +92,15 @@ export function ScanView({ onDone, onCancel }: Props) {
   const [faces, setFaces] = useState<Record<number, RGB[]>>({});
   const [problem, setProblem] = useState<string | null>(null);
 
+  /** 고를 수 있는 카메라들 (큐브 찍기에 알맞은 순서) */
+  const [cameras, setCameras] = useState<CameraInfo[]>([]);
+  /** 켜 달라고 한 카메라. null이면 브라우저가 고른 뒷면 카메라 */
+  const [cameraId, setCameraId] = useState<string | null>(loadCamera);
+  /** 실제로 켜진 카메라 */
+  const [activeId, setActiveId] = useState<string | null>(null);
+  /** 기본 카메라로 자동으로 바꾸는 일은 한 번만 한다 */
+  const autoPicked = useRef(false);
+
   const stepCount = mode === 'corners' ? 2 : FACE_STEPS.length;
 
   // 카메라 켜기
@@ -91,12 +111,13 @@ export function ScanView({ onDone, onCancel }: Props) {
       setStatus('unavailable');
       return;
     }
+    const size = { width: { ideal: 1280 }, height: { ideal: 720 } };
     navigator.mediaDevices
       .getUserMedia({
         audio: false,
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: cameraId ? { deviceId: { exact: cameraId }, ...size } : { facingMode: { ideal: 'environment' }, ...size },
       })
-      .then((s) => {
+      .then(async (s) => {
         if (cancelled) {
           s.getTracks().forEach((t) => t.stop());
           return;
@@ -109,8 +130,35 @@ export function ScanView({ onDone, onCancel }: Props) {
           () => setStatus('live'),
           () => setStatus('unavailable'),
         );
+
+        // 카메라 이름은 권한을 받은 뒤에야 보인다.
+        const current = s.getVideoTracks()[0]?.getSettings().deviceId ?? null;
+        setActiveId(current);
+        const all = await navigator.mediaDevices.enumerateDevices();
+        if (cancelled) return;
+        const ranked = rankCameras(
+          all.filter((d) => d.kind === 'videoinput').map((d) => ({ deviceId: d.deviceId, label: d.label })),
+        );
+        setCameras(ranked);
+        // 브라우저가 초광각 카메라를 골랐으면 기본 카메라로 바꾼다. 왜곡이 심하면 큐브를 찾기 어렵다.
+        if (!cameraId && !autoPicked.current && ranked.length > 1 && current && ranked[0].deviceId !== current) {
+          autoPicked.current = true;
+          setCameraId(ranked[0].deviceId);
+        }
       })
       .catch((err: unknown) => {
+        if (cancelled) return;
+        // 골라 둔 카메라를 켤 수 없으면 브라우저가 고르게 한다.
+        if (cameraId) {
+          autoPicked.current = true;
+          try {
+            localStorage.removeItem(CAMERA_KEY);
+          } catch {
+            // 무시
+          }
+          setCameraId(null);
+          return;
+        }
         const name = err instanceof DOMException ? err.name : '';
         setStatus(name === 'NotAllowedError' || name === 'SecurityError' ? 'denied' : 'unavailable');
       });
@@ -118,7 +166,22 @@ export function ScanView({ onDone, onCancel }: Props) {
       cancelled = true;
       stream?.getTracks().forEach((t) => t.stop());
     };
-  }, []);
+  }, [cameraId]);
+
+  /** 다음 카메라로 바꾸고, 고른 것을 기억한다. */
+  const switchCamera = () => {
+    if (cameras.length < 2) return;
+    const at = cameras.findIndex((c) => c.deviceId === activeId);
+    const next = cameras[(at + 1) % cameras.length].deviceId;
+    autoPicked.current = true;
+    setSeen(null);
+    setCameraId(next);
+    try {
+      localStorage.setItem(CAMERA_KEY, next);
+    } catch {
+      // 저장 실패는 무시
+    }
+  };
 
   /** 지금 카메라 화면에서 큐브를 찾는다. */
   const look = useCallback((): Seen | null => {
@@ -263,6 +326,11 @@ export function ScanView({ onDone, onCancel }: Props) {
             {found ? `큐브를 찾았어요 (${wanted}칸)` : '큐브를 찾는 중이에요…'}
           </p>
         )}
+        {cameras.length > 1 && (
+          <button className="scan__switch" onClick={switchCamera}>
+            카메라 바꾸기 ({Math.max(0, cameras.findIndex((c) => c.deviceId === activeId)) + 1}/{cameras.length})
+          </button>
+        )}
         {status !== 'live' && (
           <p className="scan__message">
             {status === 'starting' && '카메라를 켜는 중이에요…'}
@@ -308,7 +376,8 @@ export function ScanView({ onDone, onCancel }: Props) {
           )}
           <p className="muted route__notice">
             잘 안 찾아지면: 큐브가 화면에 크게 나오게 하고, 스티커에 빛이 번쩍이지 않게 하고, 큐브와 색이 다른 배경 앞에서 찍어 보세요.
-            손가락이 스티커를 가리지 않게 모서리를 잡아요. 다 찍은 뒤 틀린 칸은 직접 고칠 수 있어요.
+            손가락이 스티커를 가리지 않게 모서리를 잡아요. 화면이 둥글게 휘어 보이면 초광각 카메라이니 "카메라 바꾸기"를 눌러 보세요.
+            다 찍은 뒤 틀린 칸은 직접 고칠 수 있어요.
           </p>
         </div>
         <div className="lesson__nav">
