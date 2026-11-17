@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { ALG_SETS } from '../../algorithms';
+import { PATTERNS } from '../../algorithms/patterns';
 import type { Move } from '../../core/cube';
 import { CubeCanvas, type CubeCanvasHandle } from '../../ui/CubeCanvas';
 import { SPEEDS, useSpeed } from '../../ui/speed';
@@ -7,6 +8,7 @@ import { AlgSetView, CaseDrill, CaseStudy } from './AlgViews';
 import { CaseQuiz } from './CaseQuiz';
 import { useCaseStats } from './caseStore';
 import { COURSES, type Course, type Lesson } from './courses';
+import { PatternGallery, PatternStudy } from './PatternViews';
 import { useProgress } from './progress';
 import { resolveStep } from './resolve';
 import { StepPlayer } from './StepPlayer';
@@ -18,7 +20,9 @@ export type LearnRoute =
   | { view: 'set'; setId: string }
   | { view: 'case'; setId: string; caseId: string; from?: 'quiz' }
   | { view: 'drill'; setId: string }
-  | { view: 'quiz'; setId: string };
+  | { view: 'quiz'; setId: string }
+  | { view: 'patterns' }
+  | { view: 'pattern'; patternId: string };
 
 const ALL_LESSONS = COURSES.flatMap((course) => course.lessons.map((lesson) => ({ course, lesson })));
 
@@ -86,6 +90,15 @@ export function LearnMode({ route, onRoute }: Props) {
     }
   }
 
+  if (route.view === 'patterns' || route.view === 'pattern') {
+    const toPattern = (patternId: string) => onRoute({ view: 'pattern', patternId });
+    const pattern = route.view === 'pattern' ? PATTERNS.find((p) => p.id === route.patternId) : undefined;
+    if (pattern) {
+      return <PatternStudy pattern={pattern} onBack={() => onRoute({ view: 'patterns' })} onOpen={toPattern} />;
+    }
+    return <PatternGallery onBack={home} onOpen={toPattern} />;
+  }
+
   return <LearnHome done={done} onRoute={onRoute} />;
 }
 
@@ -135,6 +148,22 @@ function LearnHome({ done, onRoute }: { done: ReadonlySet<string>; onRoute: (rou
               </li>
             );
           })}
+        </ol>
+      </section>
+
+      <section className="course">
+        <h2>패턴 갤러리</h2>
+        <p className="muted">다 맞춘 큐브로 예쁜 무늬를 만들어요.</p>
+        <ol className="course__lessons">
+          <li>
+            <button className="lesson-card" onClick={() => onRoute({ view: 'patterns' })}>
+              <span className="lesson-card__count">{PATTERNS.length}개</span>
+              <span className="lesson-card__text">
+                <b>예쁜 무늬 만들기</b>
+                <span className="muted">체커보드, 큐브 속 큐브 같은 무늬를 3D로 따라 해요</span>
+              </span>
+            </button>
+          </li>
         </ol>
       </section>
     </div>

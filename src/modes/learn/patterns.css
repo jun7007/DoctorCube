@@ -1,0 +1,67 @@
+/*
+ * 패턴 갤러리: 무늬 목록과 무늬 하나를 만들어 보는 화면.
+ * styles.css보다 먼저 불릴 수 있어서, 겹치는 규칙은 선택자를 한 단계 더 붙여 우선하게 했다.
+ */
+
+/* ───────── 목록 ───────── */
+
+.patterns .algset__head .link {
+  min-height: 44px;
+}
+
+/* 접은 폴드(360px)에서 두 칸, 넓어질수록 칸이 늘어난다 */
+.patterns .patterns__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.patterns .pattern-card {
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 8px 12px;
+}
+
+.pattern-card svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.patterns .pattern-card .case-card__name {
+  margin-top: 4px;
+  font-size: 14px;
+  /* 한글 이름은 낱말 사이에서만 줄을 바꾼다 */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.pattern-card__turns {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ───────── 무늬 하나 만들어 보기 ───────── */
+
+.pattern-study .lesson__head .link {
+  min-height: 44px;
+}
+
+.pattern-study .case__title svg {
+  flex: none;
+}
+
+.pattern-study .case__title .lesson__title {
+  word-break: keep-all;
+}
+
+/* 손가락으로 누르는 버튼은 44px 이상 */
+.pattern-study .player__controls .btn,
+.pattern-study .player__pad summary {
+  min-height: 44px;
+}
+
+.pattern-study__undo {
+  font-size: 13px;
+}
