@@ -218,10 +218,10 @@ export function ScanView({ onDone, onCancel }: Props) {
   }
   const found = dots.length > 0;
 
-  // 영상은 화면을 꽉 채우도록(cover) 가운데 맞춰 보이므로, 그림 좌표를 그에 맞춰 옮긴다.
+  // 영상은 잘리지 않게 전체가 보이도록(contain) 가운데 맞춰 보이므로, 그림 좌표를 그에 맞춰 옮긴다.
   const place = (p: Point): Point => {
     if (!seen) return p;
-    const scale = Math.max(seen.box.width / seen.image.width, seen.box.height / seen.image.height);
+    const scale = Math.min(seen.box.width / seen.image.width, seen.box.height / seen.image.height);
     return {
       x: (p.x - seen.image.width / 2) * scale + seen.box.width / 2,
       y: (p.y - seen.image.height / 2) * scale + seen.box.height / 2,

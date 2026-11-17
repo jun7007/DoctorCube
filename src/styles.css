@@ -1149,7 +1149,8 @@ kbd {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  /* 큐브가 화면 밖으로 잘리지 않게 영상 전체를 보여 준다 */
+  object-fit: contain;
 }
 
 /* 찾아낸 칸을 영상 위에 점으로 표시한다 */
